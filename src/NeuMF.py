@@ -133,7 +133,7 @@ def load_pretrain_model(model, gmf_model, mlp_model, num_layers):
     model.get_layer('prediction').set_weights([0.5*new_weights, 0.5*new_b])    
     return model
 
-def get_train_instances(dataset):
+def get_train_instances(dataset, num_negatives):
     user_input, item_input, labels = [],[],[]
     for index,row in dataset.trainData.iterrows():
         # positive instance
@@ -144,7 +144,8 @@ def get_train_instances(dataset):
         labels.append(1)
         # negative instances
         negatives = row["Negatives"]
-        for neg_item_ID in negatives:
+        for _i in range(num_negatives):
+            neg_item_ID = negatives[_i]
             user_input.append(u)
             item_input.append(neg_item_ID)
             labels.append(0)
@@ -214,12 +215,12 @@ def train(
     for epoch in range(num_epochs):
         t1 = time()
         # Generate training instances
-        user_input, item_input, labels = get_train_instances(dataset)
+        user_input, item_input, labels = get_train_instances(dataset, num_negatives)
         
         # Training
         hist = model.fit([np.array(user_input), np.array(item_input)], #input
                          np.array(labels), # labels 
-                         batch_size=batch_size, epoch=1, verbose=0, shuffle=True)
+                         batch_size=batch_size, epochs=1, verbose=0, shuffle=True)
         t2 = time()
         
         # Evaluation
