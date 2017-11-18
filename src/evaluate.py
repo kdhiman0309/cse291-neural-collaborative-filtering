@@ -25,14 +25,6 @@ def evaluate_model(model, testData, K, num_thread):
     Evaluate the performance (Hit_Ratio, NDCG) of top-K recommendation
     Return: score of each test rating.
     """
-    global _model
-    global _testRatings
-    global _testNegatives
-    global _K
-    _model = model
-    _testRatings = testData["Rating"].values
-    _testNegatives = testData["Negatives"].values
-    _K = K
         
     hits, ndcgs = [],[]
     if(num_thread > 1): # Multi-thread
@@ -44,30 +36,31 @@ def evaluate_model(model, testData, K, num_thread):
         ndcgs = [r[1] for r in res]
         return (hits, ndcgs)
     # Single thread
-    for idx in xrange(len(_testRatings)):
-        (hr,ndcg) = eval_one_rating(idx)
+    for index, row in testData.iterrows():
+        (hr,ndcg) = eval_one_rating(row, model, K)
         hits.append(hr)
         ndcgs.append(ndcg)      
     return (hits, ndcgs)
 
-def eval_one_rating(idx):
-    rating = _testRatings[idx]
-    items = _testNegatives[idx]
-    u = rating[0]
-    gtItem = rating[1]
+def eval_one_rating(row, model, K):
+    rating = row["Rating"]
+    
+    items = row["Negatives"]#_testNegatives[idx]
+    u = row["UserID"]
+    gtItem = row["ItemID"]
     items.append(gtItem)
     # Get prediction scores
     map_item_score = {}
     users = np.full(len(items), u, dtype = 'int32')
-    predictions = _model.predict([users, np.array(items)], 
+    predictions = model.predict([users, np.array(items)], 
                                  batch_size=100, verbose=0)
-    for i in xrange(len(items)):
+    for i in range(len(items)):
         item = items[i]
         map_item_score[item] = predictions[i]
     items.pop()
     
     # Evaluate top rank list
-    ranklist = heapq.nlargest(_K, map_item_score, key=map_item_score.get)
+    ranklist = heapq.nlargest(K, map_item_score, key=map_item_score.get)
     hr = getHitRatio(ranklist, gtItem)
     ndcg = getNDCG(ranklist, gtItem)
     return (hr, ndcg)
@@ -79,7 +72,7 @@ def getHitRatio(ranklist, gtItem):
     return 0
 
 def getNDCG(ranklist, gtItem):
-    for i in xrange(len(ranklist)):
+    for i in range(len(ranklist)):
         item = ranklist[i]
         if item == gtItem:
             return math.log(2) / math.log(i+2)

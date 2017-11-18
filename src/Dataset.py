@@ -21,8 +21,9 @@ class Dataset(object):
         self.testData = self.load_file(path + ".test.data")
         
         
-        self.num_users = self.trainData["UserID"].max() 
-        self.num_items = self.trainData["ItemID"].max()
-        
+        self.num_users = self.trainData["UserID"].max()+1
+        self.num_items = self.trainData["ItemID"].max()+1
+        #self.trainData = self.trainData.sample(1000)
     def load_file(self, filename):        
-        return pd.read_csv(filename)        
+        return pd.read_pickle(filename)
+        
