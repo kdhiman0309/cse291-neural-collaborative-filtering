@@ -73,64 +73,90 @@ def get_model(num_users, num_items, layers = [20,10], reg_layers=[0,0]):
     item_latent = Flatten()(MLP_Embedding_Item(item_input))
     
     # The 0-th layer is the concatenation of embedding layers
-    vector = merge([user_latent, item_latent], mode = 'concat')
+    vector = keras.layers.concatenate([user_latent, item_latent])
     
     # MLP layers
-    for idx in xrange(1, num_layer):
-        layer = Dense(layers[idx], W_regularizer= l2(reg_layers[idx]), activation='relu', name = 'layer%d' %idx)
+    for idx in range(1, num_layer):
+        layer = Dense(layers[idx], kernel_regularizer= l2(reg_layers[idx]), activation='relu', name = 'layer%d' %idx)
         vector = layer(vector)
         
     # Final prediction layer
-    prediction = Dense(1, activation='sigmoid', init='lecun_uniform', name = 'prediction')(vector)
+    prediction = Dense(1, activation='sigmoid', kernel_initializer='lecun_uniform', name = 'prediction')(vector)
     
-    model = Model(input=[user_input, item_input], 
-                  output=prediction)
+    model = Model(inputs=[user_input, item_input], 
+                  outputs=prediction)
     
     return model
 
-def get_train_instances(train, num_negatives):
+def get_train_instances_original(dataset, num_negatives):
     user_input, item_input, labels = [],[],[]
-    num_users = train.shape[0]
-    for (u, i) in train.keys():
+    num_items = dataset.num_items
+    train_pairs = set(list(zip(dataset.trainData["UserID"].values, dataset.trainData["ItemID"].values)))
+    for index,row in dataset.trainData.iterrows():
         # positive instance
+        u = row["UserID"]
+        i = row["ItemID"]
         user_input.append(u)
         item_input.append(i)
         labels.append(1)
+        
         # negative instances
-        for t in xrange(num_negatives):
+        for t in range(num_negatives):
             j = np.random.randint(num_items)
-            while train.has_key((u, j)):
+            while (u, j) in train_pairs:
                 j = np.random.randint(num_items)
             user_input.append(u)
             item_input.append(j)
             labels.append(0)
     return user_input, item_input, labels
+def get_train_instances(dataset, num_negatives):
+    user_input, item_input, labels = [],[],[]
+    for index,row in dataset.trainData.iterrows():
+        # positive instance
+        u = row["UserID"]
+        i = row["ItemID"]
+        user_input.append(u)
+        item_input.append(i)
+        labels.append(1)
+        # negative instances
+        
+        negatives = row["Negatives"]
+        for _i in range(num_negatives):
+            neg_item_ID = negatives[_i]
+            user_input.append(u)
+            item_input.append(neg_item_ID)
+            labels.append(0)
+    user_input, item_input, labels = shuffle(user_input, item_input, labels)
+    
+    return user_input, item_input, labels
 
-if __name__ == '__main__':
-    args = parse_args()
-    path = args.path
-    dataset = args.dataset
-    layers = eval(args.layers)
-    reg_layers = eval(args.reg_layers)
-    num_negatives = args.num_neg
-    learner = args.learner
-    learning_rate = args.lr
-    batch_size = args.batch_size
-    epochs = args.epochs
-    verbose = args.verbose
+def train(
+    num_factors = 8,
+    layers = [32,16,8],
+    reg_layers = [0,0,0,0],
+    num_negatives = 4,
+    learner = "adam",
+    learning_rate = 0.001,
+    epochs = 10,
+    batch_size = 256,
+    verbose = 1,
+    out=0,
+    topK = 10,
+    datapath = "../data/movielens"
+    ):
     
     topK = 10
     evaluation_threads = 1 #mp.cpu_count()
-    print("MLP arguments: %s " %(args))
-    model_out_file = 'Pretrain/%s_MLP_%s_%d.h5' %(args.dataset, args.layers, time())
+    #print("MLP arguments: %s " %(args))
+    model_out_file = 'Pretrain/%s_GMF_%d_%d.h5' %(datapath, num_factors, time())
     
     # Loading data
     t1 = time()
-    dataset = Dataset(args.path + args.dataset)
-    train, testRatings, testNegatives = dataset.trainMatrix, dataset.testRatings, dataset.testNegatives
-    num_users, num_items = train.shape
+    dataset = Dataset(datapath)
+    trainData, validData, testData = dataset.trainData, dataset.validData, dataset.testData
+    num_users, num_items = dataset.num_users, dataset.num_items
     print("Load data done [%.1f s]. #user=%d, #item=%d, #train=%d, #test=%d" 
-          %(time()-t1, num_users, num_items, train.nnz, len(testRatings)))
+          %(time()-t1, num_users, num_items, len(trainData), len(testData)))
     
     # Build model
     model = get_model(num_users, num_items, layers, reg_layers)
@@ -145,34 +171,64 @@ if __name__ == '__main__':
     
     # Check Init performance
     t1 = time()
-    (hits, ndcgs) = evaluate_model(model, testRatings, testNegatives, topK, evaluation_threads)
+    (hits, ndcgs) = evaluate_model(model, testData, topK, evaluation_threads)
     hr, ndcg = np.array(hits).mean(), np.array(ndcgs).mean()
-    print('Init: HR = %.4f, NDCG = %.4f [%.1f]' %(hr, ndcg, time()-t1))
+    #mf_embedding_norm = np.linalg.norm(model.get_layer('user_embedding').get_weights())+np.linalg.norm(model.get_layer('item_embedding').get_weights())
+    #p_norm = np.linalg.norm(model.get_layer('prediction').get_weights()[0])
+    print('Init Test: HR = %.4f, NDCG = %.4f\t [%.1f s]' % (hr, ndcg, time()-t1))
     
+    #(hits, ndcgs) = evaluate_model(model, validData, topK, evaluation_threads)
+    #hr, ndcg = np.array(hits).mean(), np.array(ndcgs).mean()
+    #print('Init Valid: HR = %.4f, NDCG = %.4f\t [%.1f s]' % (hr, ndcg, time()-t1))
+    # Generate training instances
+        
+    user_input, item_input, labels = get_train_instances_original(dataset, num_negatives)
+    user_input = np.array(user_input)
+    item_input = np.array(item_input)
     # Train model
     best_hr, best_ndcg, best_iter = hr, ndcg, -1
-    for epoch in xrange(epochs):
+    for epoch in range(epochs):
         t1 = time()
-        # Generate training instances
-        user_input, item_input, labels = get_train_instances(train, num_negatives)
-    
+        
         # Training        
-        hist = model.fit([np.array(user_input), np.array(item_input)], #input
+        hist = model.fit([user_input, item_input], #input
                          np.array(labels), # labels 
-                         batch_size=batch_size, nb_epoch=1, verbose=0, shuffle=True)
+                         batch_size=batch_size, epochs=1, verbose=0, shuffle=True)
         t2 = time()
 
         # Evaluation
         if epoch %verbose == 0:
-            (hits, ndcgs) = evaluate_model(model, testRatings, testNegatives, topK, evaluation_threads)
-            hr, ndcg, loss = np.array(hits).mean(), np.array(ndcgs).mean(), hist.history['loss'][0]
-            print('Iteration %d [%.1f s]: HR = %.4f, NDCG = %.4f, loss = %.4f [%.1f s]' 
-                  % (epoch,  t2-t1, hr, ndcg, loss, time()-t2))
+            #(hits, ndcgs) = evaluate_model(model, validData, topK, evaluation_threads)
+            (hits_test, ndcgs_test) = evaluate_model(model, testData, topK, evaluation_threads)
+    
+            #hr, ndcg, loss = np.array(hits).mean(), np.array(ndcgs).mean(), hist.history['loss'][0]
+            hr_test, ndcg_test, loss = np.array(hits_test).mean(), np.array(ndcgs_test).mean(), hist.history['loss'][0]
+            
+            #print('Iteration %d [%.1f s]: (Valid) HR = %.4f, NDCG = %.4f, (Test) HR = %.4f, NDCG = %.4f, loss = %.4f [%.1f s]' 
+            #      % (epoch,  t2-t1, hr, ndcg, hr_test, ndcg_test, loss, time()-t2))
+            print('Iteration %d [%.1f s]: (Test) HR = %.4f, NDCG = %.4f, loss = %.4f [%.1f s]' 
+                  % (epoch,  t2-t1, hr_test, ndcg_test, loss, time()-t2))
             if hr > best_hr:
                 best_hr, best_ndcg, best_iter = hr, ndcg, epoch
-                if args.out > 0:
+                if out > 0:
                     model.save_weights(model_out_file, overwrite=True)
 
     print("End. Best Iteration %d:  HR = %.4f, NDCG = %.4f. " %(best_iter, best_hr, best_ndcg))
-    if args.out > 0:
+    if out > 0:
         print("The best MLP model is saved to %s" %(model_out_file))
+'''
+train(
+    num_factors = 8,
+    layers = [64,32,16,8],
+    reg_layers = [0,0,0,0],
+    num_negatives = 4,
+    learner = "adam",
+    learning_rate = 0.001,
+    epochs = 10,
+    batch_size = 256,
+    verbose = 1,
+    out=0,
+    topK = 10,
+    datapath = "../data/movielens"
+    )
+'''

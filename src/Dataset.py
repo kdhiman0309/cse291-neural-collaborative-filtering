@@ -17,8 +17,10 @@ class Dataset(object):
         '''
         Constructor
         '''
-        self.trainData = self.load_file(path + ".train.data")
-        self.testData = self.load_file(path + ".test.data")
+        self.trainData = self.load_file(path + ".train.data.original")
+        self.testData = self.load_file(path + ".test.data.original")
+        #self.validData = self.load_file(path + ".valid.data")
+        self.validData = self.testData
         
         
         self.num_users = self.trainData["UserID"].max()+1
