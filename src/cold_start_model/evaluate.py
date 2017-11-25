@@ -52,11 +52,21 @@ def eval_one_rating(row, model, K, dataset):
     # Get prediction scores
     map_item_score = {}
     users = np.full(len(items), u, dtype = 'int32')
-    text_features,other_features = dataset.get_item_feature(items)
-    text_features = np.array(text_features)
-    other_features = np.array(other_features)
+    def get_item_features():
+        descp,year,genre = [],[],[]
+        for i in items:
+            d, g, y = dataset.get_item_feature(i)
+            descp.append(d)
+            year.append(y)
+            genre.append(g)
+        return descp,year,genre
+    descp,year,genre = get_item_features()
+    
+    descp = np.array(descp)
+    year = np.array(year)
+    genre = np.array(genre)
 
-    predictions = model.predict([users, np.array(items),text_features,other_features], 
+    predictions = model.predict([users, np.array(items), descp, genre, year], 
                                  batch_size=128, verbose=0)
     for i in range(len(items)):
         item = items[i]

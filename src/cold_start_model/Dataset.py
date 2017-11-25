@@ -22,6 +22,8 @@ class Dataset(object):
         if prep_data:
             self.item_list = list(self.item_features.index)
             self.trainData = self.load_file(path+".ratings.data.pkl")
+            self.trainData = self.trainData.sample(frac=0.1)
+            
             self.split_train_test(count_per_user_test=count_per_user_test,count_per_user_validation=count_per_user_validation)
             self.negative_sampling(num_negatives_train=num_negatives_train)
         else:
@@ -32,7 +34,7 @@ class Dataset(object):
         
         
         self.num_users = self.trainData["UserID"].max()+1
-        self.num_items = self.trainData["ItemID"].max()+1
+        self.num_items = len(self.item_features)
         #self.trainData = self.trainData.sample(1000)
         
     def load_file(self, filename):        
@@ -113,11 +115,6 @@ class Dataset(object):
         self.testData.to_pickle(path+".test.data")
         self.validData.to_pickle(path+".valid.data")
 
-    def get_item_feature(self,item_input):
-       text_features = []
-       other_features = []
-       for i in item_input:
-          curr_row = self.item_features.loc[i]
-          text_features.append(curr_row['description_encoded'])
-          other_features.append(curr_row['year_encoded']+curr_row["genre_encoded"])
-       return text_features,other_features
+    def get_item_feature(self,itemid):
+      curr_row = self.item_features.iloc[itemid]
+      return curr_row["Description"],curr_row["Genre"],curr_row["Year"]

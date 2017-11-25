@@ -23,7 +23,7 @@ from time import time
 import sys
 import GMF, MLP
 import argparse
-
+from sklearn.utils import shuffle
 #################### Arguments ####################
 def parse_args():
     parser = argparse.ArgumentParser(description="Run NeuMF.")
@@ -71,13 +71,19 @@ def get_model(num_users, num_items, mf_dim=10, layers=[10], reg_layers=[0], reg_
     text_input_sparse = Input(shape=(200,), name = 'text_input_sparse')
     
     
-    tfidf_dense = Dense(10, activation='relu', kernel_initializer='lecun_uniform',
+    tfidf_dense = Dense(20, activation='relu', kernel_initializer='lecun_uniform',
                             name = "tfidf_dense_layer")(text_input_sparse)
     
-    item_feature_input = Input(shape=(30,), name = 'item_feature_input')
-    complete_item_features = keras.layers.concatenate([tfidf_dense, item_feature_input])
+    item_feature_input_genre = Input(shape=(24,), name = 'item_feature_input_genre')
+    item_feature_input_year = Input(shape=(6,), name = 'item_feature_input_year')
+    genre_dense = Dense(8, activation='relu', kernel_initializer='lecun_uniform',
+                            name = "genre_dense")(item_feature_input_genre)
+    year_dense = Dense(4, activation='relu', kernel_initializer='lecun_uniform',
+                            name = "year_dense ")(item_feature_input_year)
+    
+    complete_item_features = keras.layers.concatenate([tfidf_dense, genre_dense,year_dense])
 
-    shared_embedding = False
+    shared_embedding = True
     # Embedding layer
     #MF_Embedding_User = Embedding(num_users, 8, input_length=1)
     if not shared_embedding:
@@ -123,7 +129,7 @@ def get_model(num_users, num_items, mf_dim=10, layers=[10], reg_layers=[0], reg_
     # Final prediction layer
     prediction = Dense(1, activation='sigmoid', kernel_initializer='lecun_uniform', name = "prediction")(predict_vector)
     
-    model = Model(inputs=[user_input, item_input, text_input_sparse, item_feature_input], 
+    model = Model(inputs=[user_input, item_input, text_input_sparse, item_feature_input_genre, item_feature_input_year], 
                   outputs=prediction)
     
     return model
@@ -178,6 +184,8 @@ def get_train_instances_original(dataset, num_negatives):
     
 def get_train_instances(dataset, num_negatives):
     user_input, item_input, labels = [],[],[]
+    item_des, item_year, item_genre = [],[],[]
+    
     for index,row in dataset.trainData.iterrows():
         # positive instance
         u = row["UserID"]
@@ -185,6 +193,10 @@ def get_train_instances(dataset, num_negatives):
         user_input.append(u)
         item_input.append(i)
         labels.append(1)
+        d, g, y = dataset.get_item_feature(i)
+        item_des.append(d)
+        item_year.append(y)
+        item_genre.apend(g)
         # negative instances
         
         negatives = row["Negatives"]
@@ -193,8 +205,13 @@ def get_train_instances(dataset, num_negatives):
             user_input.append(u)
             item_input.append(neg_item_ID)
             labels.append(0)
-    user_input, item_input, labels = shuffle(user_input, item_input, labels)
-
+            d, g, y = dataset.get_item_feature(neg_item_ID)
+            item_des.append(d)
+            item_year.append(y)
+            item_genre.apend(g)
+            
+    user_input, item_input, labels, item_des, item_year, item_genre = shuffle(user_input, item_input, labels, item_des, item_year, item_genre)
+    return user_input, item_input, labels, item_des, item_year, item_genre
 
 def train(
     data_path="data",
@@ -210,7 +227,8 @@ def train(
     verbose = 1,
     mf_pretrain = '',
     mlp_pretrain = '',
-    out=0
+    out=0,
+    prep_data=False
     ):
     
     topK = 10
@@ -220,8 +238,9 @@ def train(
 
     # Loading data
     t1 = time()
-    dataset = Dataset(data_path,prep_data=False)
-    #dataset.save('../../data/movielens_cached_data.cache')
+    dataset = Dataset(data_path,prep_data=prep_data)
+    if prep_data:
+        dataset.save(data_path)
     trainData, validData, testData = dataset.trainData, dataset.validData, dataset.testData
     num_users, num_items = dataset.num_users, dataset.num_items
     
@@ -258,20 +277,19 @@ def train(
         model.save_weights(model_out_file, overwrite=True) 
     
     # Generate training instances
-    user_input, item_input, labels = get_train_instances_original(dataset, num_negatives)
+    user_input, item_input, labels, item_des, item_year, item_genre = get_train_instances(dataset, num_negatives)
     user_input = np.array(user_input)
     item_input = np.array(item_input)
-    
-    text_features,other_features = dataset.get_item_feature(item_input)
-    text_features = np.array(text_features)
-    other_features = np.array(other_features)
+    item_des = np.array(item_des)
+    item_year = np.array(item_year)
+    item_genre = np.array(item_genre)
    
     # Training model
     for epoch in range(num_epochs):
         t1 = time()
         
         # Training
-        hist = model.fit([user_input, item_input,text_features,other_features], #input
+        hist = model.fit([user_input, item_input, item_des, item_genre, item_year], #input
                          np.array(labels), # labels 
                          batch_size=batch_size, epochs=1, verbose=0, shuffle=True)
         t2 = time()
@@ -306,5 +324,5 @@ train(
     verbose = 1,
     mf_pretrain = '',
     mlp_pretrain = '',
-    
+    prep_data=False
 )
