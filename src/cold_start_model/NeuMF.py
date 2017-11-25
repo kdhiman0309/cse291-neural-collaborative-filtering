@@ -196,7 +196,7 @@ def get_train_instances(dataset, num_negatives):
         d, g, y = dataset.get_item_feature(i)
         item_des.append(d)
         item_year.append(y)
-        item_genre.apend(g)
+        item_genre.append(g)
         # negative instances
         
         negatives = row["Negatives"]
@@ -208,7 +208,7 @@ def get_train_instances(dataset, num_negatives):
             d, g, y = dataset.get_item_feature(neg_item_ID)
             item_des.append(d)
             item_year.append(y)
-            item_genre.apend(g)
+            item_genre.append(g)
             
     user_input, item_input, labels, item_des, item_year, item_genre = shuffle(user_input, item_input, labels, item_des, item_year, item_genre)
     return user_input, item_input, labels, item_des, item_year, item_genre
@@ -277,12 +277,15 @@ def train(
         model.save_weights(model_out_file, overwrite=True) 
     
     # Generate training instances
+    t1 = time()
+     
     user_input, item_input, labels, item_des, item_year, item_genre = get_train_instances(dataset, num_negatives)
     user_input = np.array(user_input)
     item_input = np.array(item_input)
     item_des = np.array(item_des)
     item_year = np.array(item_year)
     item_genre = np.array(item_genre)
+    print("training instances [%.1f s]"%(time()-t1))
    
     # Training model
     for epoch in range(num_epochs):
