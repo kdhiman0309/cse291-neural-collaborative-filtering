@@ -68,12 +68,13 @@ def get_model(num_users, num_items, mf_dim=10, layers=[10], reg_layers=[0], reg_
     # Input variables
     user_input = Input(shape=(1,), dtype='int32', name = 'user_input')
     item_input = Input(shape=(1,), dtype='int32', name = 'item_input')
-
-    text_input_sparse = Input(shape=(1,), dtype='float32', name = 'text_input_sparse')
-    tfidf_dense = Dense(1, activation='relu', kernel_initializer='lecun_uniform',
+    text_input_sparse = Input(shape=(200,), name = 'text_input_sparse')
+    
+    
+    tfidf_dense = Dense(10, activation='relu', kernel_initializer='lecun_uniform',
                             name = "tfidf_dense_layer")(text_input_sparse)
     
-    item_feature_input = Input(shape=(1,), dtype='float32', name = 'item_feature_input')
+    item_feature_input = Input(shape=(30,), name = 'item_feature_input')
     complete_item_features = keras.layers.concatenate([tfidf_dense, item_feature_input])
 
     shared_embedding = False
@@ -122,7 +123,7 @@ def get_model(num_users, num_items, mf_dim=10, layers=[10], reg_layers=[0], reg_
     # Final prediction layer
     prediction = Dense(1, activation='sigmoid', kernel_initializer='lecun_uniform', name = "prediction")(predict_vector)
     
-    model = Model(inputs=[user_input, item_input], 
+    model = Model(inputs=[user_input, item_input, text_input_sparse, item_feature_input], 
                   outputs=prediction)
     
     return model
@@ -174,6 +175,7 @@ def get_train_instances_original(dataset, num_negatives):
             item_input.append(j)
             labels.append(0)
     return user_input, item_input, labels
+    
 def get_train_instances(dataset, num_negatives):
     user_input, item_input, labels = [],[],[]
     for index,row in dataset.trainData.iterrows():
@@ -218,7 +220,8 @@ def train(
 
     # Loading data
     t1 = time()
-    dataset = Dataset(data_path)
+    dataset = Dataset(data_path,prep_data=False)
+    #dataset.save('../../data/movielens_cached_data.cache')
     trainData, validData, testData = dataset.trainData, dataset.validData, dataset.testData
     num_users, num_items = dataset.num_users, dataset.num_items
     
@@ -247,7 +250,7 @@ def train(
         print("Load pretrained GMF (%s) and MLP (%s) models done. " %(mf_pretrain, mlp_pretrain))
         
     # Init performance
-    (hits, ndcgs) = evaluate_model(model, testData, topK, evaluation_threads)
+    (hits, ndcgs) = evaluate_model(model, dataset, topK, evaluation_threads)
     hr, ndcg = np.array(hits).mean(), np.array(ndcgs).mean()
     print('Init: HR = %.4f, NDCG = %.4f' % (hr, ndcg))
     best_hr, best_ndcg, best_iter = hr, ndcg, -1
@@ -258,20 +261,24 @@ def train(
     user_input, item_input, labels = get_train_instances_original(dataset, num_negatives)
     user_input = np.array(user_input)
     item_input = np.array(item_input)
+    
+    text_features,other_features = dataset.get_item_feature(item_input)
+    text_features = np.array(text_features)
+    other_features = np.array(other_features)
    
     # Training model
     for epoch in range(num_epochs):
         t1 = time()
         
         # Training
-        hist = model.fit([user_input, item_input], #input
+        hist = model.fit([user_input, item_input,text_features,other_features], #input
                          np.array(labels), # labels 
                          batch_size=batch_size, epochs=1, verbose=0, shuffle=True)
         t2 = time()
         
         # Evaluation
         if epoch %verbose == 0:
-            (hits, ndcgs) = evaluate_model(model, testData, topK, evaluation_threads)
+            (hits, ndcgs) = evaluate_model(model, dataset, topK, evaluation_threads)
             hr, ndcg, loss = np.array(hits).mean(), np.array(ndcgs).mean(), hist.history['loss'][0]
             print('Iteration %d [%.1f s]: HR = %.4f, NDCG = %.4f, loss = %.4f [%.1f s]' 
                   % (epoch,  t2-t1, hr, ndcg, loss, time()-t2))
@@ -286,7 +293,7 @@ def train(
 
 
 train(
-    data_path="../data/movielens",
+    data_path="../../data/movielens20M",
     num_epochs = 20,
     batch_size = 256,
     mf_dim = 8,
