@@ -67,22 +67,8 @@ def get_model(num_users, num_items, mf_dim=10, layers=[10], reg_layers=[0], reg_
     # Input variables
     user_input = Input(shape=(1,), dtype='int32', name = 'user_input')
     item_input = Input(shape=(1,), dtype='int32', name = 'item_input')
-    text_input_sparse = Input(shape=(200,), name = 'text_input_sparse')
-    
-    
-    tfidf_dense = Dense(20, activation='relu', kernel_initializer='lecun_uniform',
-                            name = "tfidf_dense_layer")(text_input_sparse)
-    
-    item_feature_input_genre = Input(shape=(24,), name = 'item_feature_input_genre')
-    item_feature_input_year = Input(shape=(6,), name = 'item_feature_input_year')
-    genre_dense = Dense(8, activation='relu', kernel_initializer='lecun_uniform',
-                            name = "genre_dense")(item_feature_input_genre)
-    year_dense = Dense(4, activation='relu', kernel_initializer='lecun_uniform',
-                            name = "year_dense ")(item_feature_input_year)
-    
-    complete_item_features = keras.layers.concatenate([tfidf_dense, genre_dense,year_dense])
-
-    shared_embedding = True
+    print(user_input)
+    shared_embedding = False
     # Embedding layer
     #MF_Embedding_User = Embedding(num_users, 8, input_length=1)
     if not shared_embedding:
@@ -123,12 +109,12 @@ def get_model(num_users, num_items, mf_dim=10, layers=[10], reg_layers=[0], reg_
     # Concatenate MF and MLP parts
     #mf_vector = Lambda(lambda x: x * alpha)(mf_vector)
     #mlp_vector = Lambda(lambda x : x * (1-alpha))(mlp_vector)
-    predict_vector = keras.layers.concatenate([mf_vector, mlp_vector, complete_item_features])
+    predict_vector = keras.layers.concatenate([mf_vector, mlp_vector])
     
     # Final prediction layer
     prediction = Dense(1, activation='sigmoid', kernel_initializer='lecun_uniform', name = "prediction")(predict_vector)
     
-    model = Model(inputs=[user_input, item_input, text_input_sparse, item_feature_input_genre, item_feature_input_year], 
+    model = Model(inputs=[user_input, item_input], 
                   outputs=prediction)
     
     return model
@@ -238,8 +224,12 @@ def train(
     # Loading data
     t1 = time()
     dataset = Dataset(data_path,prep_data=prep_data)
+    trainData, validData, testData = dataset.trainData, dataset.validData, dataset.testData
     num_users, num_items = dataset.num_users, dataset.num_items
-        
+    
+    print("Load data done [%.1f s]. #user=%d, #item=%d, #train=%d, #test=%d" 
+          %(time()-t1, num_users, num_items, len(trainData), len(testData)))
+    
     # Build model
     model = get_model(num_users, num_items, mf_dim, layers, reg_layers, reg_mf)
     print(model.summary())
@@ -262,9 +252,9 @@ def train(
         print("Load pretrained GMF (%s) and MLP (%s) models done. " %(mf_pretrain, mlp_pretrain))
         
     # Init performance
-    (hits, ndcgs,aucs) = evaluate_model(model, dataset.testData, dataset, topK, evaluation_threads)
-    hr, ndcg, auc = np.array(hits).mean(), np.array(ndcgs).mean(), np.array(aucs).mean()
-    print('Init: HR = %.4f, NDCG = %.4f AUC = %.4f' % (hr, ndcg, auc))
+    (hits, ndcgs) = evaluate_model(model, dataset, topK, evaluation_threads)
+    hr, ndcg = np.array(hits).mean(), np.array(ndcgs).mean()
+    print('Init: HR = %.4f, NDCG = %.4f' % (hr, ndcg))
     best_hr, best_ndcg, best_iter = hr, ndcg, -1
     if out > 0:
         model.save_weights(model_out_file, overwrite=True) 
@@ -283,17 +273,17 @@ def train(
         t1 = time()
         
         # Training
-        hist = model.fit_generator(dataset.generator_train_data(batch_size),steps_per_epoch=1+int((len(dataset.train_data.userids)/batch_size)),
-                                  epochs=1, verbose=0, shuffle=True)
+        hist = model.fit([user_input, item_input], #input
+                         labels, # labels 
+                         batch_size=batch_size, epochs=1, verbose=0, shuffle=True)
         t2 = time()
         
         # Evaluation
         if epoch %verbose == 0:
-            (hits, ndcgs,aucs) = evaluate_model(model, dataset.testData, dataset, topK, evaluation_threads)
-            auc = np.array(aucs).mean()
+            (hits, ndcgs) = evaluate_model(model, dataset, topK, evaluation_threads)
             hr, ndcg, loss = np.array(hits).mean(), np.array(ndcgs).mean(), hist.history['loss'][0]
-            print('Iteration %d [%.1f s]: HR = %.4f, NDCG = %.4f, AUC = %.4f, loss = %.4f [%.1f s]' 
-                  % (epoch,  t2-t1, hr, ndcg, auc, loss, time()-t2))
+            print('Iteration %d [%.1f s]: HR = %.4f, NDCG = %.4f, loss = %.4f [%.1f s]' 
+                  % (epoch,  t2-t1, hr, ndcg, loss, time()-t2))
             if hr > best_hr:
                 best_hr, best_ndcg, best_iter = hr, ndcg, epoch
                 if out > 0:
