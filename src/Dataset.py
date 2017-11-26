@@ -30,7 +30,7 @@ class Dataset(object):
     classdocs
     '''
 
-    def __init__(self, path, prep_data=False,count_per_user_test=1,count_per_user_validation=0,num_negatives_train=5,num_threads=1):
+    def __init__(self, path, prep_data=False,count_per_user_test=4,count_per_user_validation=0,num_negatives_train=5,num_threads=1):
         '''
         Constructor
         '''
@@ -39,8 +39,8 @@ class Dataset(object):
         if prep_data:
             self.item_list = list(self.item_features.index)
             self.trainData = self.load_file(path+".ratings.data.pkl")
-            self.trainData = self.trainData.sample(frac=0.01)
-            self.split_clod_start_items()
+            #self.trainData = self.trainData.sample(frac=0.01)
+            self.split_cold_start_items()
             self.split_train_test(count_per_user_test=count_per_user_test,count_per_user_validation=count_per_user_validation)
             self.negative_sampling(num_negatives_train=num_negatives_train)
             self.gen_train_data()
@@ -64,7 +64,7 @@ class Dataset(object):
     def load_file(self, filename):        
         return pd.read_pickle(filename)
     
-    def split_clod_start_items(self, frac=0.1):
+    def split_cold_start_items(self, frac=0.1):
         items = self.item_features.ItemID.unique()
         cold_set_items = set(random.sample(set(items), int(len(items)*frac)))
         self.testColdStart = self.trainData[self.trainData.ItemID.apply(lambda x: x in cold_set_items)]
@@ -72,8 +72,9 @@ class Dataset(object):
     
     def split_train_test(self,count_per_user_test=1,count_per_user_validation=0):
         df = self.trainData
-        df = df.sort_values("Timestamp", ascending=False)
-       
+        #df = df.sort_values("Timestamp", ascending=False)
+        df = shuffle(df)
+        
         user_counts = defaultdict(int)
         rows = []
         rows_valid = []
