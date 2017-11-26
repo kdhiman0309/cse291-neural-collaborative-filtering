@@ -283,9 +283,8 @@ def train(
         t1 = time()
         
         # Training
-        hist = model.fit([user_input, item_input, item_des, item_genre, item_year], #input
-                         labels, # labels 
-                         batch_size=batch_size, epochs=1, verbose=0, shuffle=True)
+        hist = model.fit_generator(dataset.generator_train_data(batch_size),steps_per_epoch=1+int((len(dataset.train_data.userids)/batch_size)),
+                                  epochs=1, verbose=0, shuffle=True)
         t2 = time()
         
         # Evaluation

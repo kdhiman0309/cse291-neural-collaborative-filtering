@@ -45,9 +45,12 @@ def evaluate_model(model, dataset, K, num_thread):
     return (hits, ndcgs)
 
 def eval_one_rating(row, model, K, dataset):
-    
-    
-    predictions = model.predict([row.userids, row.itemids, row.descp, row.genre, row.year], 
+    descp = []
+    genre = []
+    year = []
+    descp,genre,year = dataset.get_item_feature_bulk(row.itemids)
+            
+    predictions = model.predict([row.userids, row.itemids, descp,genre,year], 
                                  batch_size=128, verbose=0)
     items = row.itemids
     map_item_score = {}

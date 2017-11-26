@@ -192,8 +192,7 @@ def train(
         t1 = time()
         
         # Training
-        hist = model.fit([user_input, item_input], #input
-                         np.array(labels), # labels 
+        hist = model.fit_generator(dataset.generator_train_data(), # labels 
                          batch_size=batch_size, epochs=1, verbose=0, shuffle=True)
         t2 = time()
         
@@ -215,18 +214,17 @@ def train(
     if out > 0:
         print("The best GMF model is saved to %s" %(model_out_file))
     
-'''
-train(
-    num_factors = 8,
-    regs = [0,0],
-    num_negatives = 4,
-    learner = "adam",
-    learning_rate = 0.001,
-    epochs = 15,
-    batch_size = 256,
-    verbose = 1,
-    out=0,
-    topK = 10,
-    datapath = "../data/movielens"
-    )
-'''
+if False:
+    train(
+        num_factors = 8,
+        regs = [0,0],
+        num_negatives = 4,
+        learner = "adam",
+        learning_rate = 0.001,
+        epochs = 15,
+        batch_size = 256,
+        verbose = 1,
+        out=0,
+        topK = 10,
+        datapath = "../data/movielens",
+        )

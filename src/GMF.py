@@ -213,7 +213,7 @@ if True:
     train(
         num_factors = 8,
         regs = [0,0],
-        num_negatives = 4,
+        num_negatives = 5,
         learner = "adam",
         learning_rate = 0.001,
         epochs = 15,
@@ -222,5 +222,5 @@ if True:
         out=0,
         topK = 10,
         datapath = "../data/movielens20M",
-    		prep_data=False
+    		prep_data=True
         )

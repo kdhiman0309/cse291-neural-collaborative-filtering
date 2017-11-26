@@ -29,7 +29,7 @@ class Dataset(object):
     classdocs
     '''
 
-    def __init__(self, path, prep_data=False,count_per_user_test=1,count_per_user_validation=0,num_negatives_train=4,num_threads=1):
+    def __init__(self, path, prep_data=False,count_per_user_test=1,count_per_user_validation=0,num_negatives_train=5,num_threads=1):
         '''
         Constructor
         '''
@@ -38,7 +38,7 @@ class Dataset(object):
         if prep_data:
             self.item_list = list(self.item_features.index)
             self.trainData = self.load_file(path+".ratings.data.pkl")
-            self.trainData = self.trainData.sample(frac=0.01)
+            #self.trainData = self.trainData.sample(frac=0.01)
             
             self.split_train_test(count_per_user_test=count_per_user_test,count_per_user_validation=count_per_user_validation)
             self.negative_sampling(num_negatives_train=num_negatives_train)
@@ -54,7 +54,7 @@ class Dataset(object):
             self.test_data = self.loadPickle(path+".test_data")    
             self.train_data = self.loadPickle(path+".train_data")
             
-        self.num_users = 6000#self.trainData["UserID"].max()+1
+        self.num_users = 10000#self.trainData["UserID"].max()+1
         self.num_items = len(self.item_features)
         #self.trainData = self.trainData.sample(1000)
         
@@ -205,12 +205,9 @@ class Dataset(object):
                 user_input += _t[0]
                 item_input += _t[1]
                 labels     += _t[2]
-                item_des   += _t[3]
-                item_year  += _t[4]
-                item_genre += _t[5]
             
         else:
-            for _index in self.trainData.index:
+            for index in self.trainData.index:
                 row = self.trainData.loc[index]
                 
                 # positive instance
@@ -247,7 +244,11 @@ class Dataset(object):
         self.pickleit(self.test_data, path+".test_data")
         
     def pickleit(self, o, path):
-        np.save(path,o)
+        
+        with open(path, 'wb') as f:
+            pickle.dump(o, f)
             
     def loadPickle(self, path):
-        return np.load(path)    
+        with open(path, 'rb') as f:
+            o = pickle.load(f)
+        return o

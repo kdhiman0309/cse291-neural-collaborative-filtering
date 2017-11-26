@@ -29,7 +29,7 @@ class Dataset(object):
     classdocs
     '''
 
-    def __init__(self, path, prep_data=False,count_per_user_test=1,count_per_user_validation=0,num_negatives_train=4,num_threads=1):
+    def __init__(self, path, prep_data=False,count_per_user_test=1,count_per_user_validation=0,num_negatives_train=5,num_threads=1):
         '''
         Constructor
         '''
@@ -54,7 +54,7 @@ class Dataset(object):
             self.test_data = self.loadPickle(path+".test_data")    
             self.train_data = self.loadPickle(path+".train_data")
             
-        self.num_users = 6000#self.trainData["UserID"].max()+1
+        self.num_users = 10000#self.trainData["UserID"].max()+1
         self.num_items = len(self.item_features)
         #self.trainData = self.trainData.sample(1000)
         
@@ -135,9 +135,13 @@ class Dataset(object):
         
 
     def get_item_feature(self,itemid):
-      curr_row = self.item_features.iloc[itemid]
-      return curr_row["Description"],curr_row["Genre"],curr_row["Year"]
+        curr_row = self.item_features.iloc[itemid]
+        return curr_row["Description"],curr_row["Genre"],curr_row["Year"]
   
+    def get_item_feature_bulk(self,itemids):
+        curr_row = self.item_features.iloc[itemids]
+        return  np.array(curr_row["Description"].tolist()), np.array(curr_row["Genre"].tolist()), np.array(curr_row["Year"].tolist())
+    
     def _one_test_data(self,index):
         row = self.testData.loc[index]
     #for index, row in self.testData.iterrows():
@@ -147,32 +151,18 @@ class Dataset(object):
         items.append(gtItem)
         # Get prediction scores
         users = np.full(len(items), u, dtype = 'int32')
-        def get_item_features():
-            descp,year,genre = [],[],[]
-            for i in items:
-                d, g, y = self.get_item_feature(i)
-                descp.append(d)
-                year.append(y)
-                genre.append(g)
-            return descp,year,genre
-        descp,year,genre = get_item_features()
         
-        descp = np.array(descp)
-        year = np.array(year)
-        genre = np.array(genre)
         m = ModelData()
     
         m.userids = users
         m.itemids = np.array(items)
         m.gtitem = gtItem
-        m.descp = descp
-        m.genre = genre
-        m.year = year
         return m
     
     def gen_test_data(self):
         t1 = time()
             #test_data.append(m)
+        
         if self.num_threads>1:
             pool = multiprocessing.Pool(processes=self.num_threads)
             res = pool.map(self._one_test_data, self.testData.index)
@@ -184,10 +174,9 @@ class Dataset(object):
             self.test_data = [self._one_test_data(_i) for _i in self.testData.index]
         print("gen_test_data [%.1f s]"%(time()-t1))
         
-        
+    
     def _one_train_data(self, index):
         user_input, item_input, labels = [],[],[]
-        item_des, item_year, item_genre = [],[],[]
         
         row = self.trainData.loc[index]
         # positive instance
@@ -196,10 +185,6 @@ class Dataset(object):
         user_input.append(u)
         item_input.append(i)
         labels.append(1)
-        d, g, y = self.get_item_feature(i)
-        item_des.append(d)
-        item_year.append(y)
-        item_genre.append(g)
         # negative instances
         
         negatives = row["Negatives"]
@@ -208,17 +193,13 @@ class Dataset(object):
             user_input.append(u)
             item_input.append(neg_item_ID)
             labels.append(0)
-            d, g, y = self.get_item_feature(neg_item_ID)
-            item_des.append(d)
-            item_year.append(y)
-            item_genre.append(g)
         
-        return user_input, item_input, labels, item_des, item_year, item_genre
+        return user_input, item_input, labels
     
     def gen_train_data(self):
         t1 = time()
         user_input, item_input, labels = [],[],[]
-        item_des, item_year, item_genre = [],[],[]
+        
         if self.num_threads>1:
             pool = multiprocessing.Pool(processes=self.num_threads)
             res = pool.map(self._one_train_data, self.trainData.index)
@@ -228,33 +209,71 @@ class Dataset(object):
                 user_input += _t[0]
                 item_input += _t[1]
                 labels     += _t[2]
-                item_des   += _t[3]
-                item_year  += _t[4]
-                item_genre += _t[5]
             
         else:
-            for _index in self.trainData.index:
-                _t = self._one_train_data(_index)
-                user_input += _t[0]
-                item_input += _t[1]
-                labels     += _t[2]
-                item_des   += _t[3]
-                item_year  += _t[4]
-                item_genre += _t[5]
+            for index in self.trainData.index:
+                row = self.trainData.loc[index]
                 
-        user_input, item_input, labels, item_des, item_year, item_genre = shuffle(user_input, item_input, labels, item_des, item_year, item_genre)
+                # positive instance
+                u = row["UserID"]
+                i = row["ItemID"]
+                user_input.append(u)
+                item_input.append(i)
+                labels.append(1)
+                # negative instances
+                
+                negatives = row["Negatives"]
+                for _i in range(len(negatives)):
+                    neg_item_ID = negatives[_i]
+                    user_input.append(u)
+                    item_input.append(neg_item_ID)
+                    labels.append(0)
+                
+        user_input, item_input, labels = shuffle(user_input, item_input, labels)
        
         m = ModelData()
         
         m.userids = np.array(user_input)
         m.itemids = np.array(item_input)
         m.labels = np.array(labels)
-        m.descp = np.array(item_des)
-        m.genre = np.array(item_genre)
-        m.year = np.array(item_year)
         
         self.train_data = m
         print("gen_train_data [%.1f s]"%(time()-t1))
+    
+    def generator_train_data(self,batch_size):
+        while(True):
+            user_ids = self.train_data.userids
+            item_ids = self.train_data.itemids
+            _labels = self.train_data.labels
+            user_ids,item_ids,_labels = shuffle(user_ids,item_ids,_labels)
+        
+            i=0
+            while(i <len(user_ids)):
+                users, items, decs, genre, year, labels = [],[],[],[],[],[]
+                    
+                for j in range(batch_size):
+                    if i>=len(user_ids):
+                        break
+                    d,g,y = self.get_item_feature(item_ids[i])
+                    
+                    users.append(user_ids[i])
+                    items.append(item_ids[i])
+                    decs.append(d)
+                    genre.append(g)
+                    year.append(y)
+                    labels.append(_labels[i])
+                    i+=1
+                users, items, decs, genre, year, labels = \
+                    np.array(users),np.array(items),np.array(decs),np.array(genre),np.array(year),np.array(labels), 
+                yield([users, items, decs, genre, year],labels)
+    def generator_test_data(self):
+        user_ids = self.test_data.userids
+        item_ids = self.test_data.itemids
+        
+        for i in range(len(user_ids)):
+            d,g,y = self.get_item_feature(item_ids[i])
+            yield [user_ids[i],item_ids[i],d,g,y]
+    
     def save(self, path):
         self.trainData.to_pickle(path+".train.data")
         self.testData.to_pickle(path+".test.data")
@@ -262,9 +281,15 @@ class Dataset(object):
         
         self.pickleit(self.train_data, path+".train_data")
         self.pickleit(self.test_data, path+".test_data")
-        
+    
+    
+    
     def pickleit(self, o, path):
-        np.save(path,o)
+        
+        with open(path, 'wb') as f:
+            pickle.dump(o, f)
             
     def loadPickle(self, path):
-        return np.load(path)
+        with open(path, 'rb') as f:
+            o = pickle.load(f)
+        return o

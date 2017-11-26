@@ -202,13 +202,13 @@ def train(
     mf_pretrain = '',
     mlp_pretrain = '',
     out=0,
-	prep_data=False
+    prep_data=False
     ):
     
     topK = 10
     evaluation_threads = 1 #mp.cpu_count()
     #print("MLP arguments: %s " %(args))
-    model_out_file = 'Pretrain/%s_GMF_%d_%d.h5' %(datapath, num_factors, time())
+    #model_out_file = 'Pretrain/%s_GMF_%d_%d.h5' %(datapath, num_factors, time())
     
     # Loading data
     t1 = time()
@@ -288,5 +288,6 @@ train(
     verbose = 1,
     mf_pretrain = '',
     mlp_pretrain = '',
-    datapath="../data/movielens20M"
+    datapath="../data/movielens20M",
+    prep_data=True
 )
