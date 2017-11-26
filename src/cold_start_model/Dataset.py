@@ -47,14 +47,14 @@ class Dataset(object):
             self.save(path)
             
         else:
-            self.trainData = self.load_file(path + ".train.data")
-            self.testData = self.load_file(path + ".test.data")
+            #self.trainData = self.load_file(path + ".train.data")
+            #self.testData = self.load_file(path + ".test.data")
             #self.validData = self.load_file(path + ".valid.data")
-            self.validData = self.testData
+            #self.validData = self.testData
             self.test_data = self.loadPickle(path+".test_data")    
             self.train_data = self.loadPickle(path+".train_data")
             
-        self.num_users = 14182#self.trainData["UserID"].max()+1
+        self.num_users = 6000#self.trainData["UserID"].max()+1
         self.num_items = len(self.item_features)
         #self.trainData = self.trainData.sample(1000)
         
@@ -173,7 +173,6 @@ class Dataset(object):
     def gen_test_data(self):
         t1 = time()
             #test_data.append(m)
-        
         if self.num_threads>1:
             pool = multiprocessing.Pool(processes=self.num_threads)
             res = pool.map(self._one_test_data, self.testData.index)
@@ -185,7 +184,7 @@ class Dataset(object):
             self.test_data = [self._one_test_data(_i) for _i in self.testData.index]
         print("gen_test_data [%.1f s]"%(time()-t1))
         
-    
+        
     def _one_train_data(self, index):
         user_input, item_input, labels = [],[],[]
         item_des, item_year, item_genre = [],[],[]
@@ -265,12 +264,7 @@ class Dataset(object):
         self.pickleit(self.test_data, path+".test_data")
         
     def pickleit(self, o, path):
-        
-        with open(path, 'wb') as f:
-            pickle.dump(o, f)
+        np.save(path,o)
             
     def loadPickle(self, path):
-        with open(path, 'rb') as f:
-            o = pickle.load(f)
-        return o
-        
+        return np.load(path)

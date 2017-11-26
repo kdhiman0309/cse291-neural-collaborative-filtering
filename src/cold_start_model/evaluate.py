@@ -28,7 +28,6 @@ def evaluate_model(model, dataset, K, num_thread):
     Return: score of each test rating.
     """
         
-    testData = dataset.testData
     hits, ndcgs = [],[]
     if(num_thread > 1): # Multi-thread
         pool = multiprocessing.Pool(processes=num_thread)

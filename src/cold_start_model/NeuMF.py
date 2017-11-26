@@ -238,12 +238,8 @@ def train(
     # Loading data
     t1 = time()
     dataset = Dataset(data_path,prep_data=prep_data)
-    trainData, validData, testData = dataset.trainData, dataset.validData, dataset.testData
     num_users, num_items = dataset.num_users, dataset.num_items
-    
-    print("Load data done [%.1f s]. #user=%d, #item=%d, #train=%d, #test=%d" 
-          %(time()-t1, num_users, num_items, len(trainData), len(testData)))
-    
+        
     # Build model
     model = get_model(num_users, num_items, mf_dim, layers, reg_layers, reg_mf)
     print(model.summary())
@@ -322,5 +318,5 @@ train(
     verbose = 1,
     mf_pretrain = '',
     mlp_pretrain = '',
-    prep_data=True
+    prep_data=False
 )
