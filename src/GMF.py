@@ -75,9 +75,12 @@ def get_model(num_users, num_items, latent_dim, regs=[0,0]):
     # Element-wise product of user and item embeddings 
     predict_vector = keras.layers.multiply([user_latent, item_latent])
     
+    dense1 = Dense(latent_dim, activation='relu', kernel_initializer='lecun_uniform', name = 'dense1')(predict_vector)
+    dense2 = Dense(int(latent_dim/2), activation='relu', kernel_initializer='lecun_uniform', name = 'dense2')(dense1)
+    
     # Final prediction layer
     #prediction = Lambda(lambda x: K.sigmoid(K.sum(x)), output_shape=(1,))(predict_vector)
-    prediction = Dense(1, activation='sigmoid', kernel_initializer='lecun_uniform', name = 'prediction')(predict_vector)
+    prediction = Dense(1, activation='sigmoid', kernel_initializer='lecun_uniform', name = 'prediction')(dense2)
     
     model = Model(inputs=[user_input, item_input], 
                 outputs=prediction)
@@ -138,7 +141,8 @@ def train(
     verbose = 1,
     out=0,
     topK = 10,
-    datapath = "../data/movielens"
+    datapath = "../data/movielens",
+    prep_data=False
     ):
     evaluation_threads = 1 #mp.cpu_count()
     #print("GMF arguments: %s" %(args))
@@ -147,11 +151,8 @@ def train(
     # Loading data
     t1 = time()
     
-    dataset = Dataset(datapath)
-    trainData, validData, testData = dataset.trainData, dataset.validData, dataset.testData
+    dataset = Dataset(datapath, prep_data=prep_data)
     num_users, num_items = dataset.num_users, dataset.num_items
-    print("Load data done [%.1f s]. #user=%d, #item=%d, #train=%d, #test=%d" 
-          %(time()-t1, num_users, num_items, len(trainData), len(testData)))
     
     # Build model
     model = get_model(num_users, num_items, num_factors, regs)
@@ -167,25 +168,21 @@ def train(
         model.compile(optimizer=SGD(lr=learning_rate), loss='binary_crossentropy')
     
     #model.compile(optimizer="adam", loss='binary_crossentropy')
-    #print(model.summary())
+    print(model.summary())
     
     # Init performance
     t1 = time()
-    (hits, ndcgs) = evaluate_model(model, testData, topK, evaluation_threads)
+    (hits, ndcgs) = evaluate_model(model, dataset, topK, evaluation_threads)
     hr, ndcg = np.array(hits).mean(), np.array(ndcgs).mean()
     #mf_embedding_norm = np.linalg.norm(model.get_layer('user_embedding').get_weights())+np.linalg.norm(model.get_layer('item_embedding').get_weights())
     #p_norm = np.linalg.norm(model.get_layer('prediction').get_weights()[0])
     print('Init Test: HR = %.4f, NDCG = %.4f\t [%.1f s]' % (hr, ndcg, time()-t1))
-    
-    (hits, ndcgs) = evaluate_model(model, validData, topK, evaluation_threads)
-    hr, ndcg = np.array(hits).mean(), np.array(ndcgs).mean()
-    print('Init Valid: HR = %.4f, NDCG = %.4f\t [%.1f s]' % (hr, ndcg, time()-t1))
-    
+       
     # Train model
     # Generate training instances
-    user_input, item_input, labels = get_train_instances_original(dataset, num_negatives)
-    user_input = np.array(user_input)
-    item_input = np.array(item_input)
+    _t = dataset.train_data
+    user_input, item_input, labels = _t.userids, _t.itemids, _t.labels
+    
     
     best_hr, best_ndcg, best_iter = hr, ndcg, -1
     for epoch in range(epochs):
@@ -199,13 +196,10 @@ def train(
         
         # Evaluation
         if epoch %verbose == 0:
-            (hits, ndcgs) = evaluate_model(model, validData, topK, evaluation_threads)
-            (hits_test, ndcgs_test) = evaluate_model(model, testData, topK, evaluation_threads)
-    
+            (hits, ndcgs) = evaluate_model(model, dataset, topK, evaluation_threads)
             hr, ndcg, loss = np.array(hits).mean(), np.array(ndcgs).mean(), hist.history['loss'][0]
-            hr_test, ndcg_test = np.array(hits_test).mean(), np.array(ndcgs_test).mean()
-            print('Iteration %d [%.1f s]: (Valid) HR = %.4f, NDCG = %.4f, (Test) HR = %.4f, NDCG = %.4f, loss = %.4f [%.1f s]' 
-                  % (epoch,  t2-t1, hr, ndcg, hr_test, ndcg_test, loss, time()-t2))
+            print('Iteration %d [%.1f s]: HR = %.4f, NDCG = %.4f, loss = %.4f [%.1f s]' 
+                  % (epoch,  t2-t1, hr, ndcg, loss, time()-t2))
             if hr > best_hr:
                 best_hr, best_ndcg, best_iter = hr, ndcg, epoch
                 if out > 0:
@@ -215,18 +209,18 @@ def train(
     if out > 0:
         print("The best GMF model is saved to %s" %(model_out_file))
     
-'''
-train(
-    num_factors = 8,
-    regs = [0,0],
-    num_negatives = 4,
-    learner = "adam",
-    learning_rate = 0.001,
-    epochs = 15,
-    batch_size = 256,
-    verbose = 1,
-    out=0,
-    topK = 10,
-    datapath = "../data/movielens"
-    )
-'''
+if True:
+    train(
+        num_factors = 8,
+        regs = [0,0],
+        num_negatives = 4,
+        learner = "adam",
+        learning_rate = 0.001,
+        epochs = 15,
+        batch_size = 256,
+        verbose = 1,
+        out=0,
+        topK = 10,
+        datapath = "../data/movielens20M",
+    		prep_data=False
+        )
