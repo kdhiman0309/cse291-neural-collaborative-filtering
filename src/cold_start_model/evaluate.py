@@ -22,7 +22,7 @@ _testRatings = None
 _testNegatives = None
 _K = None
 
-def evaluate_model(model, dataset, K, num_thread):
+def evaluate_model(model, testData, dataset, K, num_thread):
     """
     Evaluate the performance (Hit_Ratio, NDCG) of top-K recommendation
     Return: score of each test rating.
@@ -38,7 +38,7 @@ def evaluate_model(model, dataset, K, num_thread):
         ndcgs = [r[1] for r in res]
         return (hits, ndcgs)
     # Single thread
-    for row in dataset.test_data:
+    for index,row in testData.iterrows():
         (hr,ndcg) = eval_one_rating(row, model, K, dataset)
         hits.append(hr)
         ndcgs.append(ndcg)      
@@ -48,18 +48,22 @@ def eval_one_rating(row, model, K, dataset):
     descp = []
     genre = []
     year = []
-    descp,genre,year = dataset.get_item_feature_bulk(row.itemids)
-            
-    predictions = model.predict([row.userids, row.itemids, descp,genre,year], 
+    
+    items = row["Negatives"]#_testNegatives[idx]
+    u = row["UserID"]
+    gtItem = row["ItemID"]
+    items.append(gtItem)
+    descp,genre,year = dataset.get_item_feature_bulk(items)
+    # Get prediction scores
+    users = np.full(len(items), u, dtype = 'int32')
+    
+    predictions = model.predict([users, np.array(items), descp,genre,year], 
                                  batch_size=128, verbose=0)
-    items = row.itemids
     map_item_score = {}
     for i in range(len(items)):
         item = items[i]
         map_item_score[item] = predictions[i]
     
-    
-    gtItem = row.gtitem
     # Evaluate top rank list
     ranklist = heapq.nlargest(K, map_item_score, key=map_item_score.get)
     hr = getHitRatio(ranklist, gtItem)

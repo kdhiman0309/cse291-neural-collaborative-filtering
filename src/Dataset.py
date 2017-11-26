@@ -13,6 +13,7 @@ from sklearn.utils import shuffle
 from time import time
 import pickle
 import multiprocessing
+import random
 
 class ModelData():
     def __init__(self):
@@ -38,20 +39,21 @@ class Dataset(object):
         if prep_data:
             self.item_list = list(self.item_features.index)
             self.trainData = self.load_file(path+".ratings.data.pkl")
-            #self.trainData = self.trainData.sample(frac=0.01)
-            
+            self.trainData = self.trainData.sample(frac=0.01)
+            self.split_clod_start_items()
             self.split_train_test(count_per_user_test=count_per_user_test,count_per_user_validation=count_per_user_validation)
             self.negative_sampling(num_negatives_train=num_negatives_train)
             self.gen_train_data()
-            self.gen_test_data()
+            #self.gen_test_data()
             self.save(path)
             
         else:
             #self.trainData = self.load_file(path + ".train.data")
-            #self.testData = self.load_file(path + ".test.data")
-            #self.validData = self.load_file(path + ".valid.data")
+            self.testData = self.load_file(path + ".test.data")
+            self.testColdStart = self.load_file(path + ".testColdStart.data")
+            ##self.validData = self.load_file(path + ".valid.data")
             #self.validData = self.testData
-            self.test_data = self.loadPickle(path+".test_data")    
+            #self.test_data = self.loadPickle(path+".test_data")    
             self.train_data = self.loadPickle(path+".train_data")
             
         self.num_users = 10000#self.trainData["UserID"].max()+1
@@ -61,6 +63,12 @@ class Dataset(object):
         
     def load_file(self, filename):        
         return pd.read_pickle(filename)
+    
+    def split_clod_start_items(self, frac=0.1):
+        items = self.item_features.ItemID.unique()
+        cold_set_items = set(random.sample(set(items), int(len(items)*frac)))
+        self.testColdStart = self.trainData[self.trainData.ItemID.apply(lambda x: x in cold_set_items)]
+        self.trainData = self.trainData.loc[list(set(self.trainData.index) - set(self.testColdStart.index))]
     
     def split_train_test(self,count_per_user_test=1,count_per_user_validation=0):
         df = self.trainData
@@ -90,7 +98,10 @@ class Dataset(object):
         
         for x in self.testData[["UserID", "ItemID"]].values:
             user_item_pairs[x[0]].add(x[1])
-            
+        
+        for x in self.testColdStart[["UserID", "ItemID"]].values:
+            user_item_pairs[x[0]].add(x[1])
+        
         for x in self.trainData[["UserID", "ItemID"]].values:
             user_item_pairs[x[0]].add(x[1])
             
@@ -123,6 +134,10 @@ class Dataset(object):
         user_item_pairs = user_item_pairs2
         user_item_pairs2 = copy.deepcopy(user_item_pairs)
         
+        num_negs_per_positive = 99
+        self.testColdStart["Negatives"] = self.testColdStart["UserID"].apply(lambda x: get_negs(x))
+        user_item_pairs = user_item_pairs2
+        user_item_pairs2 = copy.deepcopy(user_item_pairs)
         
         num_negs_per_positive = 99
         self.validData["Negatives"] = self.validData["UserID"].apply(lambda x: get_negs(x))
@@ -137,7 +152,7 @@ class Dataset(object):
     def get_item_feature(self,itemid):
       curr_row = self.item_features.iloc[itemid]
       return curr_row["Description"],curr_row["Genre"],curr_row["Year"]
-  
+    '''
     def _one_test_data(self,index):
         row = self.testData.loc[index]
     #for index, row in self.testData.iterrows():
@@ -169,7 +184,7 @@ class Dataset(object):
         else:    
             self.test_data = [self._one_test_data(_i) for _i in self.testData.index]
         print("gen_test_data [%.1f s]"%(time()-t1))
-        
+    '''
     
     def _one_train_data(self, index):
         user_input, item_input, labels = [],[],[]
@@ -237,11 +252,12 @@ class Dataset(object):
         print("gen_train_data [%.1f s]"%(time()-t1))
     def save(self, path):
         self.trainData.to_pickle(path+".train.data")
+        self.testColdStart.to_pickle(path+".testColdStart.data")
         self.testData.to_pickle(path+".test.data")
         self.validData.to_pickle(path+".valid.data")
         
         self.pickleit(self.train_data, path+".train_data")
-        self.pickleit(self.test_data, path+".test_data")
+        #self.pickleit(self.test_data, path+".test_data")
         
     def pickleit(self, o, path):
         
