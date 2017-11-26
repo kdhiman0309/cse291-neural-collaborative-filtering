@@ -138,8 +138,7 @@ class Dataset(object):
       curr_row = self.item_features.iloc[itemid]
       return curr_row["Description"],curr_row["Genre"],curr_row["Year"]
   
-    def _one_test_data(self,_i):
-        index = self.testData.index[_i]
+    def _one_test_data(self,index):
         row = self.testData.loc[index]
     #for index, row in self.testData.iterrows():
         items = row["Negatives"]#_testNegatives[idx]
@@ -177,61 +176,83 @@ class Dataset(object):
         
         if self.num_threads>1:
             pool = multiprocessing.Pool(processes=self.num_threads)
-            res = pool.map(self._one_test_data, range(len(self.testData)))
+            res = pool.map(self._one_test_data, self.testData.index)
             pool.close()
             pool.join()
             self.test_data = [r for r in res]
             
         else:    
-            self.test_data = [self._one_test_data(_i) for _i in range(len(self.testData))]
+            self.test_data = [self._one_test_data(_i) for _i in self.testData.index]
         print("gen_test_data [%.1f s]"%(time()-t1))
         
-            
+    
+    def _one_train_data(self, index):
+        user_input, item_input, labels = [],[],[]
+        item_des, item_year, item_genre = [],[],[]
+        
+        row = self.trainData.loc[index]
+        # positive instance
+        u = row["UserID"]
+        i = row["ItemID"]
+        user_input.append(u)
+        item_input.append(i)
+        labels.append(1)
+        d, g, y = self.get_item_feature(i)
+        item_des.append(d)
+        item_year.append(y)
+        item_genre.append(g)
+        # negative instances
+        
+        negatives = row["Negatives"]
+        for _i in range(len(negatives)):
+            neg_item_ID = negatives[_i]
+            user_input.append(u)
+            item_input.append(neg_item_ID)
+            labels.append(0)
+            d, g, y = self.get_item_feature(neg_item_ID)
+            item_des.append(d)
+            item_year.append(y)
+            item_genre.append(g)
+        
+        return user_input, item_input, labels, item_des, item_year, item_genre
+    
     def gen_train_data(self):
         t1 = time()
         user_input, item_input, labels = [],[],[]
         item_des, item_year, item_genre = [],[],[]
-        
-        for index,row in self.trainData.iterrows():
-            # positive instance
-            u = row["UserID"]
-            i = row["ItemID"]
-            user_input.append(u)
-            item_input.append(i)
-            labels.append(1)
-            d, g, y = self.get_item_feature(i)
-            item_des.append(d)
-            item_year.append(y)
-            item_genre.append(g)
-            # negative instances
+        if self.num_threads>1:
+            pool = multiprocessing.Pool(processes=self.num_threads)
+            res = pool.map(self._one_train_data, self.trainData.index)
+            pool.close()
+            pool.join()
+            for _t in res:
+                user_input += _t[0]
+                item_input += _t[1]
+                labels     += _t[2]
+                item_des   += _t[3]
+                item_year  += _t[4]
+                item_genre += _t[5]
             
-            negatives = row["Negatives"]
-            for _i in range(len(negatives)):
-                neg_item_ID = negatives[_i]
-                user_input.append(u)
-                item_input.append(neg_item_ID)
-                labels.append(0)
-                d, g, y = self.get_item_feature(neg_item_ID)
-                item_des.append(d)
-                item_year.append(y)
-                item_genre.append(g)
+        else:
+            for _index in self.trainData.index:
+                _t = self._one_train_data(_index)
+                user_input += _t[0]
+                item_input += _t[1]
+                labels     += _t[2]
+                item_des   += _t[3]
+                item_year  += _t[4]
+                item_genre += _t[5]
                 
         user_input, item_input, labels, item_des, item_year, item_genre = shuffle(user_input, item_input, labels, item_des, item_year, item_genre)
-        user_input = np.array(user_input)
-        item_input = np.array(item_input)
-        item_des = np.array(item_des)
-        item_year = np.array(item_year)
-        item_genre = np.array(item_genre)
-        labels = np.array(labels)
-        
+       
         m = ModelData()
         
-        m.userids = user_input
-        m.itemids = item_input
-        m.labels = labels
-        m.descp = item_des
-        m.genre = item_genre
-        m.year = item_year
+        m.userids = np.array(user_input)
+        m.itemids = np.array(item_input)
+        m.labels = np.array(labels)
+        m.descp = np.array(item_des)
+        m.genre = np.array(item_genre)
+        m.year = np.array(item_year)
         
         self.train_data = m
         print("gen_train_data [%.1f s]"%(time()-t1))
