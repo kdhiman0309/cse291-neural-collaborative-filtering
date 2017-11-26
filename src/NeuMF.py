@@ -23,7 +23,7 @@ from time import time
 import sys
 import GMF, MLP
 import argparse
-
+from sklearn.utils import shuffle
 #################### Arguments ####################
 def parse_args():
     parser = argparse.ArgumentParser(description="Run NeuMF.")
@@ -188,7 +188,7 @@ def get_train_instances(dataset, num_negatives):
 
 
 def train(
-    data_path="data",
+    datapath="data",
     num_epochs = 20,
     batch_size = 256,
     mf_dim = 8,
@@ -201,22 +201,20 @@ def train(
     verbose = 1,
     mf_pretrain = '',
     mlp_pretrain = '',
-    out=0
+    out=0,
+	prep_data=False
     ):
     
     topK = 10
-    evaluation_threads = 1#mp.cpu_count()
-    print("NeuMF arguments:")
-    model_out_file = '../pretrain/%s_NeuMF_%d_%s_%d.h5' %(data_path, mf_dim, layers, time())
-
+    evaluation_threads = 1 #mp.cpu_count()
+    #print("MLP arguments: %s " %(args))
+    model_out_file = 'Pretrain/%s_GMF_%d_%d.h5' %(datapath, num_factors, time())
+    
     # Loading data
     t1 = time()
-    dataset = Dataset(data_path)
-    trainData, validData, testData = dataset.trainData, dataset.validData, dataset.testData
-    num_users, num_items = dataset.num_users, dataset.num_items
     
-    print("Load data done [%.1f s]. #user=%d, #item=%d, #train=%d, #test=%d" 
-          %(time()-t1, num_users, num_items, len(trainData), len(testData)))
+    dataset = Dataset(datapath, prep_data=prep_data)
+    num_users, num_items = dataset.num_users, dataset.num_items
     
     # Build model
     model = get_model(num_users, num_items, mf_dim, layers, reg_layers, reg_mf)
@@ -240,7 +238,7 @@ def train(
         print("Load pretrained GMF (%s) and MLP (%s) models done. " %(mf_pretrain, mlp_pretrain))
         
     # Init performance
-    (hits, ndcgs) = evaluate_model(model, testData, topK, evaluation_threads)
+    (hits, ndcgs) = evaluate_model(model, dataset, topK, evaluation_threads)
     hr, ndcg = np.array(hits).mean(), np.array(ndcgs).mean()
     print('Init: HR = %.4f, NDCG = %.4f' % (hr, ndcg))
     best_hr, best_ndcg, best_iter = hr, ndcg, -1
@@ -248,10 +246,9 @@ def train(
         model.save_weights(model_out_file, overwrite=True) 
     
     # Generate training instances
-    user_input, item_input, labels = get_train_instances_original(dataset, num_negatives)
-    user_input = np.array(user_input)
-    item_input = np.array(item_input)
-   
+    _t = dataset.train_data
+    user_input, item_input, labels = _t.userids, _t.itemids, _t.labels
+    
     # Training model
     for epoch in range(num_epochs):
         t1 = time()
@@ -264,7 +261,7 @@ def train(
         
         # Evaluation
         if epoch %verbose == 0:
-            (hits, ndcgs) = evaluate_model(model, testData, topK, evaluation_threads)
+            (hits, ndcgs) = evaluate_model(model, dataset, topK, evaluation_threads)
             hr, ndcg, loss = np.array(hits).mean(), np.array(ndcgs).mean(), hist.history['loss'][0]
             print('Iteration %d [%.1f s]: HR = %.4f, NDCG = %.4f, loss = %.4f [%.1f s]' 
                   % (epoch,  t2-t1, hr, ndcg, loss, time()-t2))
@@ -279,7 +276,6 @@ def train(
 
 
 train(
-    data_path="../data/movielens",
     num_epochs = 20,
     batch_size = 256,
     mf_dim = 8,
@@ -292,5 +288,5 @@ train(
     verbose = 1,
     mf_pretrain = '',
     mlp_pretrain = '',
-    
+    datapath="../data/movielens20M"
 )

@@ -142,7 +142,8 @@ def train(
     verbose = 1,
     out=0,
     topK = 10,
-    datapath = "../data/movielens"
+    datapath = "../data/movielens",
+    prep_data=False
     ):
     
     topK = 10
@@ -152,11 +153,9 @@ def train(
     
     # Loading data
     t1 = time()
-    dataset = Dataset(datapath)
-    trainData, validData, testData = dataset.trainData, dataset.validData, dataset.testData
+    
+    dataset = Dataset(datapath, prep_data=prep_data)
     num_users, num_items = dataset.num_users, dataset.num_items
-    print("Load data done [%.1f s]. #user=%d, #item=%d, #train=%d, #test=%d" 
-          %(time()-t1, num_users, num_items, len(trainData), len(testData)))
     
     # Build model
     model = get_model(num_users, num_items, layers, reg_layers)
@@ -171,43 +170,34 @@ def train(
     
     # Check Init performance
     t1 = time()
-    (hits, ndcgs) = evaluate_model(model, testData, topK, evaluation_threads)
+    (hits, ndcgs) = evaluate_model(model, dataset, topK, evaluation_threads)
     hr, ndcg = np.array(hits).mean(), np.array(ndcgs).mean()
     #mf_embedding_norm = np.linalg.norm(model.get_layer('user_embedding').get_weights())+np.linalg.norm(model.get_layer('item_embedding').get_weights())
     #p_norm = np.linalg.norm(model.get_layer('prediction').get_weights()[0])
     print('Init Test: HR = %.4f, NDCG = %.4f\t [%.1f s]' % (hr, ndcg, time()-t1))
-    
-    #(hits, ndcgs) = evaluate_model(model, validData, topK, evaluation_threads)
-    #hr, ndcg = np.array(hits).mean(), np.array(ndcgs).mean()
-    #print('Init Valid: HR = %.4f, NDCG = %.4f\t [%.1f s]' % (hr, ndcg, time()-t1))
-    # Generate training instances
-        
-    user_input, item_input, labels = get_train_instances_original(dataset, num_negatives)
-    user_input = np.array(user_input)
-    item_input = np.array(item_input)
+       
     # Train model
+    # Generate training instances
+    _t = dataset.train_data
+    user_input, item_input, labels = _t.userids, _t.itemids, _t.labels
+    
+    
     best_hr, best_ndcg, best_iter = hr, ndcg, -1
     for epoch in range(epochs):
         t1 = time()
         
-        # Training        
+        # Training
         hist = model.fit([user_input, item_input], #input
                          np.array(labels), # labels 
                          batch_size=batch_size, epochs=1, verbose=0, shuffle=True)
         t2 = time()
-
+        
         # Evaluation
         if epoch %verbose == 0:
-            #(hits, ndcgs) = evaluate_model(model, validData, topK, evaluation_threads)
-            (hits_test, ndcgs_test) = evaluate_model(model, testData, topK, evaluation_threads)
-    
-            #hr, ndcg, loss = np.array(hits).mean(), np.array(ndcgs).mean(), hist.history['loss'][0]
-            hr_test, ndcg_test, loss = np.array(hits_test).mean(), np.array(ndcgs_test).mean(), hist.history['loss'][0]
-            
-            #print('Iteration %d [%.1f s]: (Valid) HR = %.4f, NDCG = %.4f, (Test) HR = %.4f, NDCG = %.4f, loss = %.4f [%.1f s]' 
-            #      % (epoch,  t2-t1, hr, ndcg, hr_test, ndcg_test, loss, time()-t2))
-            print('Iteration %d [%.1f s]: (Test) HR = %.4f, NDCG = %.4f, loss = %.4f [%.1f s]' 
-                  % (epoch,  t2-t1, hr_test, ndcg_test, loss, time()-t2))
+            (hits, ndcgs) = evaluate_model(model, dataset, topK, evaluation_threads)
+            hr, ndcg, loss = np.array(hits).mean(), np.array(ndcgs).mean(), hist.history['loss'][0]
+            print('Iteration %d [%.1f s]: HR = %.4f, NDCG = %.4f, loss = %.4f [%.1f s]' 
+                  % (epoch,  t2-t1, hr, ndcg, loss, time()-t2))
             if hr > best_hr:
                 best_hr, best_ndcg, best_iter = hr, ndcg, epoch
                 if out > 0:
@@ -216,7 +206,7 @@ def train(
     print("End. Best Iteration %d:  HR = %.4f, NDCG = %.4f. " %(best_iter, best_hr, best_ndcg))
     if out > 0:
         print("The best MLP model is saved to %s" %(model_out_file))
-'''
+
 train(
     num_factors = 8,
     layers = [64,32,16,8],
@@ -229,6 +219,5 @@ train(
     verbose = 1,
     out=0,
     topK = 10,
-    datapath = "../data/movielens"
+    datapath = "../data/movielens20M"
     )
-'''
