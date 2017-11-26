@@ -23,7 +23,6 @@ from time import time
 import sys
 import GMF, MLP
 import argparse
-from sklearn.utils import shuffle
 #################### Arguments ####################
 def parse_args():
     parser = argparse.ArgumentParser(description="Run NeuMF.")
@@ -239,8 +238,6 @@ def train(
     # Loading data
     t1 = time()
     dataset = Dataset(data_path,prep_data=prep_data)
-    if prep_data:
-        dataset.save(data_path)
     trainData, validData, testData = dataset.trainData, dataset.validData, dataset.testData
     num_users, num_items = dataset.num_users, dataset.num_items
     
@@ -279,21 +276,19 @@ def train(
     # Generate training instances
     t1 = time()
      
-    user_input, item_input, labels, item_des, item_year, item_genre = get_train_instances(dataset, num_negatives)
-    user_input = np.array(user_input)
-    item_input = np.array(item_input)
-    item_des = np.array(item_des)
-    item_year = np.array(item_year)
-    item_genre = np.array(item_genre)
-    print("training instances [%.1f s]"%(time()-t1))
-   
+    #user_input, item_input, labels, item_des, item_year, item_genre = get_train_instances(dataset, num_negatives)
+    #print("training instances [%.1f s]"%(time()-t1))
+    _t = dataset.train_data
+    user_input, item_input, labels, item_des, item_year, item_genre = \
+    _t.userids, _t.itemids, _t.labels, _t.descp, _t.year, _t.genre
+    
     # Training model
     for epoch in range(num_epochs):
         t1 = time()
         
         # Training
         hist = model.fit([user_input, item_input, item_des, item_genre, item_year], #input
-                         np.array(labels), # labels 
+                         labels, # labels 
                          batch_size=batch_size, epochs=1, verbose=0, shuffle=True)
         t2 = time()
         
@@ -327,5 +322,5 @@ train(
     verbose = 1,
     mf_pretrain = '',
     mlp_pretrain = '',
-    prep_data=False
+    prep_data=True
 )

@@ -12,6 +12,8 @@ import heapq # for retrieval topK
 import multiprocessing
 import numpy as np
 from time import time
+from sklearn.utils import shuffle
+
 #from numba import jit, autojit
 
 # Global variables that are shared across processes
@@ -37,7 +39,7 @@ def evaluate_model(model, dataset, K, num_thread):
         ndcgs = [r[1] for r in res]
         return (hits, ndcgs)
     # Single thread
-    for index, row in testData.iterrows():
+    for row in dataset.test_data:
         (hr,ndcg) = eval_one_rating(row, model, K, dataset)
         hits.append(hr)
         ndcgs.append(ndcg)      
@@ -45,34 +47,17 @@ def evaluate_model(model, dataset, K, num_thread):
 
 def eval_one_rating(row, model, K, dataset):
     
-    items = row["Negatives"]#_testNegatives[idx]
-    u = row["UserID"]
-    gtItem = row["ItemID"]
-    items.append(gtItem)
-    # Get prediction scores
-    map_item_score = {}
-    users = np.full(len(items), u, dtype = 'int32')
-    def get_item_features():
-        descp,year,genre = [],[],[]
-        for i in items:
-            d, g, y = dataset.get_item_feature(i)
-            descp.append(d)
-            year.append(y)
-            genre.append(g)
-        return descp,year,genre
-    descp,year,genre = get_item_features()
     
-    descp = np.array(descp)
-    year = np.array(year)
-    genre = np.array(genre)
-
-    predictions = model.predict([users, np.array(items), descp, genre, year], 
+    predictions = model.predict([row.userids, row.itemids, row.descp, row.genre, row.year], 
                                  batch_size=128, verbose=0)
+    items = row.itemids
+    map_item_score = {}
     for i in range(len(items)):
         item = items[i]
         map_item_score[item] = predictions[i]
-    items.pop()
     
+    
+    gtItem = row.gtitem
     # Evaluate top rank list
     ranklist = heapq.nlargest(K, map_item_score, key=map_item_score.get)
     hr = getHitRatio(ranklist, gtItem)
