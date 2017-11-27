@@ -146,7 +146,7 @@ def train(
     ):
     evaluation_threads = 1 #mp.cpu_count()
     #print("GMF arguments: %s" %(args))
-    model_out_file = 'Pretrain/%s_GMF_%d_%d.h5' %(datapath, num_factors, time())
+    model_out_file = '../model/GMF_%d_%d.h5' %(num_factors, time())
     
     # Loading data
     t1 = time()
@@ -172,11 +172,16 @@ def train(
     
     # Init performance
     t1 = time()
-    (hits, ndcgs) = evaluate_model(model, dataset.trainData, dataset, topK, evaluation_threads)
-    hr, ndcg = np.array(hits).mean(), np.array(ndcgs).mean()
-    #mf_embedding_norm = np.linalg.norm(model.get_layer('user_embedding').get_weights())+np.linalg.norm(model.get_layer('item_embedding').get_weights())
-    #p_norm = np.linalg.norm(model.get_layer('prediction').get_weights()[0])
-    print('Init Test: HR = %.4f, NDCG = %.4f\t [%.1f s]' % (hr, ndcg, time()-t1))
+    
+    def evaulate(_data):
+        (hits, ndcgs, aucs) = evaluate_model(model, _data, dataset, topK, evaluation_threads)
+        hr, ndcg, auc = np.array(hits).mean(), np.array(ndcgs).mean(), np.array(aucs).mean()
+        return hr, ndcg, auc
+    
+    hr, ndcg, auc = evaulate(dataset.testData)
+    print('Init Test: HR = %.4f, NDCG = %.4f, AUC = %.4f\t [%.1f s]' % (hr, ndcg, auc, time()-t1))
+    hr, ndcg, auc = evaulate(dataset.testColdStart)
+    print('Cold Start: HR = %.4f, NDCG = %.4f, AUC = %.4f\t [%.1f s]' % (hr, ndcg, auc, time()-t1))
        
     # Train model
     # Generate training instances
@@ -196,16 +201,21 @@ def train(
         
         # Evaluation
         if epoch %verbose == 0:
-            (hits, ndcgs) = evaluate_model(model, dataset.trainData, dataset, topK, evaluation_threads)
-            hr, ndcg, loss = np.array(hits).mean(), np.array(ndcgs).mean(), hist.history['loss'][0]
-            print('Iteration %d [%.1f s]: HR = %.4f, NDCG = %.4f, loss = %.4f [%.1f s]' 
-                  % (epoch,  t2-t1, hr, ndcg, loss, time()-t2))
+            hr, ndcg, auc = evaulate(dataset.testData)
+            print('Iteration %d [%.1f s]: HR = %.4f, NDCG = %.4f, AUC = %.4f, loss = %.4f [%.1f s]' 
+                  % (epoch,  t2-t1, hr, ndcg, auc, hist.history['loss'][0], time()-t2))
             if hr > best_hr:
                 best_hr, best_ndcg, best_iter = hr, ndcg, epoch
                 if out > 0:
-                    model.save_weights(model_out_file, overwrite=True)
+                    model.save(model_out_file, overwrite=True)
 
     print("End. Best Iteration %d:  HR = %.4f, NDCG = %.4f. " %(best_iter, best_hr, best_ndcg))
+    model = keras.models.load_model(model_out_file)
+    t2 = time()
+    hr, ndcg, auc = evaulate(dataset.testColdStart)
+    print('Cold Start [%.1f s]: HR = %.4f, NDCG = %.4f, AUC = %.4f, [%.1f s]' 
+          % (t2-t1, hr, ndcg, auc, time()-t2))
+    
     if out > 0:
         print("The best GMF model is saved to %s" %(model_out_file))
     
