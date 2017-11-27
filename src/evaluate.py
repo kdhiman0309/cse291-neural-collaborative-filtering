@@ -27,7 +27,6 @@ def evaluate_model(model, testData, dataset, K, num_thread):
     Evaluate the performance (Hit_Ratio, NDCG) of top-K recommendation
     Return: score of each test rating.
     """
-        
     hits, ndcgs, aucs = [],[],[]
     if(num_thread > 1): # Multi-thread
         pool = multiprocessing.Pool(processes=num_thread)
@@ -43,8 +42,8 @@ def evaluate_model(model, testData, dataset, K, num_thread):
         (hr,ndcg, auc) = eval_one_rating(row, model, K, dataset)
         hits.append(hr)
         ndcgs.append(ndcg)    
-        aucs.append(auc)  
-    return (hits, ndcgs, auc)
+        aucs.append(auc)
+    return (hits, ndcgs, aucs)
 
 def eval_one_rating(row, model, K, dataset):
     
@@ -58,18 +57,19 @@ def eval_one_rating(row, model, K, dataset):
     predictions = model.predict([users, np.array(items)], 
                                  batch_size=128, verbose=0)
     map_item_score = {}
-    user_auc = 0
+    user_auc = 0.0
     gtitem_score = predictions[-1]
     for i in range(len(items)):
         item = items[i]
         map_item_score[item] = predictions[i]
-        user_auc += (predictions[i] < gtitem_score)    
-    
+        user_auc += 1.0 if predictions[i] < gtitem_score else 0.0
+    items.pop()
+    user_auc = user_auc/len(items)
     # Evaluate top rank list
     ranklist = heapq.nlargest(K, map_item_score, key=map_item_score.get)
     hr = getHitRatio(ranklist, gtItem)
     ndcg = getNDCG(ranklist, gtItem)
-    return (hr, ndcg, user_auc/(len(items)-1))
+    return (hr, ndcg, user_auc)
 
 def getHitRatio(ranklist, gtItem):
     for item in ranklist:
