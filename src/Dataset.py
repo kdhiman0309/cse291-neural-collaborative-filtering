@@ -30,16 +30,17 @@ class Dataset(object):
     classdocs
     '''
 
-    def __init__(self, path, prep_data=False,count_per_user_test=4,count_per_user_validation=0,num_negatives_train=5,num_threads=1):
+    def __init__(self, path, prep_data=False,count_per_user_test=1,count_per_user_validation=0,num_negatives_train=5,num_threads=1):
         '''
         Constructor
         '''
+        print("dataset")
         self.num_threads=num_threads
         self.item_features = self.load_file(path + ".itemfeatures.pkl")
         if prep_data:
             self.item_list = list(self.item_features.index)
             self.trainData = self.load_file(path+".ratings.data.pkl")
-            #self.trainData = self.trainData.sample(frac=0.01)
+            #self.trainData = self.trainData.sample(frac=0.05)
             self.split_cold_start_items()
             self.split_train_test(count_per_user_test=count_per_user_test,count_per_user_validation=count_per_user_validation)
             self.negative_sampling(num_negatives_train=num_negatives_train)
@@ -66,14 +67,36 @@ class Dataset(object):
     
     def split_cold_start_items(self, frac=0.1):
         items = self.item_features.ItemID.unique()
-        cold_set_items = set(random.sample(set(items), int(len(items)*frac)))
+        cold_set_items = random.sample(set(items), int(len(items)*frac))
+        cold_set_items = shuffle(cold_set_items)
+        cold_set_items_pseudo = cold_set_items[:int(len(cold_set_items)/2)]
+        cold_set_items = cold_set_items[int(len(cold_set_items)/2):]
+        cold_set_items = set(cold_set_items)
+        cold_set_items_pseudo = set(cold_set_items_pseudo)
+        item_counts = defaultdict(int)
+        num_pairs_in_train = 10
+        
+        def map_it(x):
+            if x in cold_set_items_pseudo: 
+                if item_counts[x] < num_pairs_in_train:
+                    item_counts[x]+=1
+                    return False
+                else:
+                    return True
+            else:
+                return False
+        
+        self.train_data = shuffle(self.trainData)
+        
+        self.testColdStartPsuedo = self.trainData[self.trainData.ItemID.apply(lambda x: map_it(x))]
         self.testColdStart = self.trainData[self.trainData.ItemID.apply(lambda x: x in cold_set_items)]
-        self.trainData = self.trainData.loc[list(set(self.trainData.index) - set(self.testColdStart.index))]
+        
+        self.trainData = self.trainData.loc[list(set(self.trainData.index) - set(self.testColdStart.index) - set(self.testColdStartPsuedo.index))]
     
     def split_train_test(self,count_per_user_test=1,count_per_user_validation=0):
         df = self.trainData
-        #df = df.sort_values("Timestamp", ascending=False)
-        df = shuffle(df)
+        df = df.sort_values("Timestamp", ascending=False)
+        #df = shuffle(df)
         
         user_counts = defaultdict(int)
         rows = []
@@ -97,18 +120,10 @@ class Dataset(object):
     def negative_sampling(self, num_negatives_train=4):
         user_item_pairs = defaultdict(set)
         
-        for x in self.testData[["UserID", "ItemID"]].values:
-            user_item_pairs[x[0]].add(x[1])
-        
-        for x in self.testColdStart[["UserID", "ItemID"]].values:
-            user_item_pairs[x[0]].add(x[1])
-        
-        for x in self.trainData[["UserID", "ItemID"]].values:
-            user_item_pairs[x[0]].add(x[1])
+        for _data in [self.testData, self.testColdStart, self.testColdStartPsuedo, self.testData, self.validData]:
+            for x in _data[["UserID", "ItemID"]].values:
+                user_item_pairs[x[0]].add(x[1])
             
-        for x in self.validData[["UserID", "ItemID"]].values:
-            user_item_pairs[x[0]].add(x[1])
-        
         
         num_items = len(self.item_list)
         user_item_pairs2 = copy.deepcopy(user_item_pairs)
@@ -132,18 +147,23 @@ class Dataset(object):
         
         num_negs_per_positive = 99
         self.testData["Negatives"] = self.testData["UserID"].apply(lambda x: get_negs(x))
-        user_item_pairs = user_item_pairs2
-        user_item_pairs2 = copy.deepcopy(user_item_pairs)
+        #user_item_pairs = user_item_pairs2
+        #user_item_pairs2 = copy.deepcopy(user_item_pairs)
         
         num_negs_per_positive = 99
         self.testColdStart["Negatives"] = self.testColdStart["UserID"].apply(lambda x: get_negs(x))
+        #user_item_pairs = user_item_pairs2
+        #user_item_pairs2 = copy.deepcopy(user_item_pairs)
+        
+        num_negs_per_positive = 99
+        self.testColdStartPsuedo["Negatives"] = self.testColdStartPsuedo["UserID"].apply(lambda x: get_negs(x))
         user_item_pairs = user_item_pairs2
         user_item_pairs2 = copy.deepcopy(user_item_pairs)
         
-        num_negs_per_positive = 99
-        self.validData["Negatives"] = self.validData["UserID"].apply(lambda x: get_negs(x))
-        user_item_pairs = user_item_pairs2
-        user_item_pairs2 = copy.deepcopy(user_item_pairs)
+        #num_negs_per_positive = 99
+        #self.validData["Negatives"] = self.validData["UserID"].apply(lambda x: get_negs(x))
+        #user_item_pairs = user_item_pairs2
+        #user_item_pairs2 = copy.deepcopy(user_item_pairs)
     
         num_negs_per_positive = num_negatives_train
         self.trainData["Negatives"] = self.trainData["UserID"].apply(lambda x: get_negs(x))
