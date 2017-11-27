@@ -238,9 +238,9 @@ def train(
         print("Load pretrained GMF (%s) and MLP (%s) models done. " %(mf_pretrain, mlp_pretrain))
         
     # Init performance
-    (hits, ndcgs) = evaluate_model(model, dataset.trainData, dataset, topK, evaluation_threads)
-    hr, ndcg = np.array(hits).mean(), np.array(ndcgs).mean()
-    print('Init: HR = %.4f, NDCG = %.4f' % (hr, ndcg))
+    (hits, ndcgs,aucs) = evaluate_model(model, dataset.trainData, dataset, topK, evaluation_threads)
+    hr, ndcg, auc = np.array(hits).mean(), np.array(ndcgs).mean(), np.array(aucs).mean()
+    print('Init: HR = %.4f, NDCG = %.4f, AUC = %.4f' % (hr, ndcg, auc))
     best_hr, best_ndcg, best_iter = hr, ndcg, -1
     if out > 0:
         model.save_weights(model_out_file, overwrite=True) 
@@ -261,10 +261,11 @@ def train(
         
         # Evaluation
         if epoch %verbose == 0:
-            (hits, ndcgs) = evaluate_model(model, dataset.trainData, dataset, topK, evaluation_threads)
+            (hits, ndcgs, aucs) = evaluate_model(model, dataset.trainData, dataset, topK, evaluation_threads)
+            auc = np.array(aucs).mean()
             hr, ndcg, loss = np.array(hits).mean(), np.array(ndcgs).mean(), hist.history['loss'][0]
-            print('Iteration %d [%.1f s]: HR = %.4f, NDCG = %.4f, loss = %.4f [%.1f s]' 
-                  % (epoch,  t2-t1, hr, ndcg, loss, time()-t2))
+            print('Iteration %d [%.1f s]: HR = %.4f, NDCG = %.4f,AUC = %.4f, loss = %.4f [%.1f s]' 
+                  % (epoch,  t2-t1, hr, ndcg, auc, loss, time()-t2))
             if hr > best_hr:
                 best_hr, best_ndcg, best_iter = hr, ndcg, epoch
                 if out > 0:
