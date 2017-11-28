@@ -88,47 +88,6 @@ def get_model(num_users, num_items, latent_dim, regs=[0,0]):
     return model
 
 
-def get_train_instances_original(dataset, num_negatives):
-    user_input, item_input, labels = [],[],[]
-    num_items = dataset.num_items
-    train_pairs = set(list(zip(dataset.trainData["UserID"].values, dataset.trainData["ItemID"].values)))
-    for index,row in dataset.trainData.iterrows():
-        # positive instance
-        u = row["UserID"]
-        i = row["ItemID"]
-        user_input.append(u)
-        item_input.append(i)
-        labels.append(1)
-        
-        # negative instances
-        for t in range(num_negatives):
-            j = np.random.randint(num_items)
-            while (u, j) in train_pairs:
-                j = np.random.randint(num_items)
-            user_input.append(u)
-            item_input.append(j)
-            labels.append(0)
-    return user_input, item_input, labels
-def get_train_instances(dataset, num_negatives):
-    user_input, item_input, labels = [],[],[]
-    for index,row in dataset.trainData.iterrows():
-        # positive instance
-        u = row["UserID"]
-        i = row["ItemID"]
-        user_input.append(u)
-        item_input.append(i)
-        labels.append(1)
-        # negative instances
-        
-        negatives = row["Negatives"]
-        for _i in range(num_negatives):
-            neg_item_ID = negatives[_i]
-            user_input.append(u)
-            item_input.append(neg_item_ID)
-            labels.append(0)
-    user_input, item_input, labels = shuffle(user_input, item_input, labels)
-    
-    return user_input, item_input, labels
 class MyModel():
     def train(self,
         num_factors = 8,
@@ -214,8 +173,11 @@ class MyModel():
             # Evaluation
                 
         self.model = model
-        print("End. Best Iteration %d:  HR = %.4f, NDCG = %.4f. " %(best_iter, best_hr, best_ndcg))
         model = keras.models.load_model(model_out_file)
+        t2 = time()
+        hr, ndcg, auc = evaulate(dataset.testData)
+        print('Test [%.1f s]: HR = %.4f, NDCG = %.4f, AUC = %.4f, [%.1f s]' 
+              % (t2-t1, hr, ndcg, auc, time()-t2))
         t2 = time()
         hr, ndcg, auc = evaulate(dataset.testColdStart)
         print('Cold Start [%.1f s]: HR = %.4f, NDCG = %.4f, AUC = %.4f, [%.1f s]' 

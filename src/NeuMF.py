@@ -68,7 +68,7 @@ def get_model(num_users, num_items, mf_dim=10, layers=[10], reg_layers=[0], reg_
     # Input variables
     user_input = Input(shape=(1,), dtype='int32', name = 'user_input')
     item_input = Input(shape=(1,), dtype='int32', name = 'item_input')
-    print(user_input)
+    
     shared_embedding = False
     # Embedding layer
     #MF_Embedding_User = Embedding(num_users, 8, input_length=1)
@@ -146,149 +146,137 @@ def load_pretrain_model(model, gmf_model, mlp_model, num_layers):
     model.get_layer('prediction').set_weights([0.5*new_weights, 0.5*new_b])    
     return model
 
-def get_train_instances_original(dataset, num_negatives):
-    user_input, item_input, labels = [],[],[]
-    num_items = dataset.num_items
-    train_pairs = set(list(zip(dataset.trainData["UserID"].values, dataset.trainData["ItemID"].values)))
-    for index,row in dataset.trainData.iterrows():
-        # positive instance
-        u = row["UserID"]
-        i = row["ItemID"]
-        user_input.append(u)
-        item_input.append(i)
-        labels.append(1)
+class MyModel():
+    def train(self,
+        datapath="data",
+        num_epochs = 20,
+        batch_size = 256,
+        mf_dim = 8,
+        layers = [64,32,16,8],
+        reg_mf = 0,
+        reg_layers = [0,0,0,0],
+        num_negatives = 5,
+        learning_rate = 0.001,
+        learner = "adam",
+        verbose = 1,
+        mf_pretrain = '',
+        mlp_pretrain = '',
+        out=0,
+        prep_data=False
+        ):
         
-        # negative instances
-        for t in range(num_negatives):
-            j = np.random.randint(num_items)
-            while (u, j) in train_pairs:
-                j = np.random.randint(num_items)
-            user_input.append(u)
-            item_input.append(j)
-            labels.append(0)
-    return user_input, item_input, labels
-def get_train_instances(dataset, num_negatives):
-    user_input, item_input, labels = [],[],[]
-    for index,row in dataset.trainData.iterrows():
-        # positive instance
-        u = row["UserID"]
-        i = row["ItemID"]
-        user_input.append(u)
-        item_input.append(i)
-        labels.append(1)
-        # negative instances
+        topK = 10
+        evaluation_threads = 1 #mp.cpu_count()
+        #print("MLP arguments: %s " %(args))
+        model_out_file = '../model/NeuMF_%d_%d.h5' %(num_factors, time())
         
-        negatives = row["Negatives"]
-        for _i in range(num_negatives):
-            neg_item_ID = negatives[_i]
-            user_input.append(u)
-            item_input.append(neg_item_ID)
-            labels.append(0)
-    user_input, item_input, labels = shuffle(user_input, item_input, labels)
-
-
-def train(
-    datapath="data",
-    num_epochs = 20,
-    batch_size = 256,
-    mf_dim = 8,
-    layers = [64,32,16,8],
-    reg_mf = 0,
-    reg_layers = [0,0,0,0],
-    num_negatives = 5,
-    learning_rate = 0.001,
-    learner = "adam",
-    verbose = 1,
-    mf_pretrain = '',
-    mlp_pretrain = '',
-    out=0,
-    prep_data=False
-    ):
-    
-    topK = 10
-    evaluation_threads = 1 #mp.cpu_count()
-    #print("MLP arguments: %s " %(args))
-    #model_out_file = 'Pretrain/%s_GMF_%d_%d.h5' %(datapath, num_factors, time())
-    
-    # Loading data
-    t1 = time()
-    
-    dataset = Dataset(datapath, prep_data=prep_data)
-    num_users, num_items = dataset.num_users, dataset.num_items
-    
-    # Build model
-    model = get_model(num_users, num_items, mf_dim, layers, reg_layers, reg_mf)
-    print(model.summary())
-    if learner.lower() == "adagrad": 
-        model.compile(optimizer=Adagrad(lr=learning_rate), loss='binary_crossentropy')
-    elif learner.lower() == "rmsprop":
-        model.compile(optimizer=RMSprop(lr=learning_rate), loss='binary_crossentropy')
-    elif learner.lower() == "adam":
-        model.compile(optimizer=Adam(lr=learning_rate), loss='binary_crossentropy')
-    else:
-        model.compile(optimizer=SGD(lr=learning_rate), loss='binary_crossentropy')
-    
-    # Load pretrain model
-    if mf_pretrain != '' and mlp_pretrain != '':
-        gmf_model = GMF.get_model(num_users,num_items,mf_dim)
-        gmf_model.load_weights(mf_pretrain)
-        mlp_model = MLP.get_model(num_users,num_items, layers, reg_layers)
-        mlp_model.load_weights(mlp_pretrain)
-        model = load_pretrain_model(model, gmf_model, mlp_model, len(layers))
-        print("Load pretrained GMF (%s) and MLP (%s) models done. " %(mf_pretrain, mlp_pretrain))
-        
-    # Init performance
-    (hits, ndcgs,aucs) = evaluate_model(model, dataset.trainData, dataset, topK, evaluation_threads)
-    hr, ndcg, auc = np.array(hits).mean(), np.array(ndcgs).mean(), np.array(aucs).mean()
-    print('Init: HR = %.4f, NDCG = %.4f, AUC = %.4f' % (hr, ndcg, auc))
-    best_hr, best_ndcg, best_iter = hr, ndcg, -1
-    if out > 0:
-        model.save_weights(model_out_file, overwrite=True) 
-    
-    # Generate training instances
-    _t = dataset.train_data
-    user_input, item_input, labels = _t.userids, _t.itemids, _t.labels
-    
-    # Training model
-    for epoch in range(num_epochs):
+        # Loading data
         t1 = time()
         
+        dataset = Dataset(datapath, prep_data=prep_data)
+        num_users, num_items = dataset.num_users, dataset.num_items
+        
+        # Build model
+        model = get_model(num_users, num_items, mf_dim, layers, reg_layers, reg_mf)
+        print(model.summary())
+        if learner.lower() == "adagrad": 
+            model.compile(optimizer=Adagrad(lr=learning_rate), loss='binary_crossentropy')
+        elif learner.lower() == "rmsprop":
+            model.compile(optimizer=RMSprop(lr=learning_rate), loss='binary_crossentropy')
+        elif learner.lower() == "adam":
+            model.compile(optimizer=Adam(lr=learning_rate), loss='binary_crossentropy')
+        else:
+            model.compile(optimizer=SGD(lr=learning_rate), loss='binary_crossentropy')
+        
+        # Load pretrain model
+        if mf_pretrain != '' and mlp_pretrain != '':
+            gmf_model = GMF.get_model(num_users,num_items,mf_dim)
+            gmf_model.load_weights(mf_pretrain)
+            mlp_model = MLP.get_model(num_users,num_items, layers, reg_layers)
+            mlp_model.load_weights(mlp_pretrain)
+            model = load_pretrain_model(model, gmf_model, mlp_model, len(layers))
+            print("Load pretrained GMF (%s) and MLP (%s) models done. " %(mf_pretrain, mlp_pretrain))
+            
+         # Init performance
+        t1 = time()
+        
+        def evaulate(_data):
+            (hits, ndcgs, aucs) = evaluate_model(model, _data, dataset, topK, evaluation_threads)
+            return np.array(hits).mean(), np.array(ndcgs).mean(), np.array(aucs).mean()
+        hr, ndcg, auc = evaulate(dataset.testData)
+        print('Init Test: HR = %.4f, NDCG = %.4f, AUC = %.4f\t [%.1f s]' % (hr, ndcg, auc, time()-t1))
+        #hr, ndcg, auc = evaulate(dataset.testColdStart)
+        #print('Cold Start: HR = %.4f, NDCG = %.4f, AUC = %.4f\t [%.1f s]' % (hr, ndcg, auc, time()-t1))
+        # Train model
+        # Generate training instances
+        _t = dataset.train_data
+        user_input, item_input, labels = _t.userids, _t.itemids, _t.labels
+        
+        best_hr, best_ndcg, best_iter,epoch = hr, ndcg, -1,0
+        
+        class MetricsCallback(keras.callbacks.Callback):
+            def on_train_begin(self, logs={}):
+                self.epoch = 0
+                self.best_hr = 0
+                self.best_ndcg = 0
+                self.best_iter = -1
+            def on_epoch_end(self, batch, logs={}):
+                
+                t2 = time()
+                hr, ndcg, auc = evaulate(dataset.testData)
+                print('Iteration %d [%.1f s]: HR = %.4f, NDCG = %.4f, AUC = %.4f [%.1f s]' 
+                      % (self.epoch,  t2-t1, hr, ndcg, auc, time()-t2))
+                if hr > self.best_hr:
+                    self.best_hr, self.best_ndcg, self.best_iter = hr, ndcg, self.epoch
+                    model.save(model_out_file, overwrite=True)
+                self.epoch+=1
+        
+        t1 = time()
+        metricsClbk = MetricsCallback()
         # Training
         hist = model.fit([user_input, item_input], #input
                          np.array(labels), # labels 
-                         batch_size=batch_size, epochs=1, verbose=0, shuffle=True)
-        t2 = time()
+                         batch_size=batch_size, epochs=epochs, verbose=2, shuffle=True, callbacks=[metricsClbk])
         
-        # Evaluation
-        if epoch %verbose == 0:
-            (hits, ndcgs, aucs) = evaluate_model(model, dataset.trainData, dataset, topK, evaluation_threads)
-            auc = np.array(aucs).mean()
-            hr, ndcg, loss = np.array(hits).mean(), np.array(ndcgs).mean(), hist.history['loss'][0]
-            print('Iteration %d [%.1f s]: HR = %.4f, NDCG = %.4f,AUC = %.4f, loss = %.4f [%.1f s]' 
-                  % (epoch,  t2-t1, hr, ndcg, auc, loss, time()-t2))
-            if hr > best_hr:
-                best_hr, best_ndcg, best_iter = hr, ndcg, epoch
-                if out > 0:
-                    model.save_weights(model_out_file, overwrite=True)
+            # Evaluation
+                
+        self.model = model
+        model = keras.models.load_model(model_out_file)
+        t2 = time()
+        hr, ndcg, auc = evaulate(dataset.testData)
+        print('Test [%.1f s]: HR = %.4f, NDCG = %.4f, AUC = %.4f, [%.1f s]' 
+              % (t2-t1, hr, ndcg, auc, time()-t2))
+        t2 = time()
+        hr, ndcg, auc = evaulate(dataset.testColdStart)
+        print('Cold Start [%.1f s]: HR = %.4f, NDCG = %.4f, AUC = %.4f, [%.1f s]' 
+              % (t2-t1, hr, ndcg, auc, time()-t2))
+        t2 = time()
+        hr, ndcg, auc = evaulate(dataset.testColdStartPseudo)
+        print('Cold Start Pseudo [%.1f s]: HR = %.4f, NDCG = %.4f, AUC = %.4f, [%.1f s]' 
+              % (t2-t1, hr, ndcg, auc, time()-t2))
+        
+        if out > 0:
+            print("The best NeuMF model is saved to %s" %(model_out_file))
+            
+        self.dataset = dataset
+        self.best_model = model
+       
 
-    print("End. Best Iteration %d:  HR = %.4f, NDCG = %.4f. " %(best_iter, best_hr, best_ndcg))
-    if out > 0:
-        print("The best NeuMF model is saved to %s" %(model_out_file))
-
-
-train(
-    num_epochs = 20,
-    batch_size = 256,
-    mf_dim = 8,
-    layers = [32,16,8],
-    reg_mf = 0,
-    reg_layers = [0,0,0],
-    num_negatives = 4,
-    learning_rate = 0.001,
-    learner = "adam",
-    verbose = 1,
-    mf_pretrain = '',
-    mlp_pretrain = '',
-    datapath="../data/movielens20M",
-    prep_data=True
-)
+if True:
+    m = MyModel()
+    m.train(
+        num_epochs = 20,
+        batch_size = 256,
+        mf_dim = 8,
+        layers = [32,16,8],
+        reg_mf = 0,
+        reg_layers = [0,0,0],
+        num_negatives = 4,
+        learning_rate = 0.001,
+        learner = "adam",
+        verbose = 1,
+        mf_pretrain = '',
+        mlp_pretrain = '',
+        datapath="../data/movielens20M",
+        prep_data=True
+    )

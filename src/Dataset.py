@@ -30,7 +30,7 @@ class Dataset(object):
     classdocs
     '''
 
-    def __init__(self, path, prep_data=False,count_per_user_test=1,count_per_user_validation=0,num_negatives_train=5,num_threads=1):
+    def __init__(self, path, prep_data=False,count_per_user_test=2,count_per_user_validation=0,num_negatives_train=5,num_threads=1):
         '''
         Constructor
         '''
@@ -52,6 +52,7 @@ class Dataset(object):
             #self.trainData = self.load_file(path + ".train.data")
             self.testData = self.load_file(path + ".test.data")
             self.testColdStart = self.load_file(path + ".testColdStart.data")
+            self.testColdStartPseudo = self.load_file(path + ".testColdStartPseudo.data")
             ##self.validData = self.load_file(path + ".valid.data")
             #self.validData = self.testData
             #self.test_data = self.loadPickle(path+".test_data")    
@@ -65,7 +66,7 @@ class Dataset(object):
     def load_file(self, filename):        
         return pd.read_pickle(filename)
     
-    def split_cold_start_items(self, frac=0.1):
+    def split_cold_start_items(self, frac=0.1, num_pairs_in_train=10):
         items = self.item_features.ItemID.unique()
         cold_set_items = random.sample(set(items), int(len(items)*frac))
         cold_set_items = shuffle(cold_set_items)
@@ -74,7 +75,6 @@ class Dataset(object):
         cold_set_items = set(cold_set_items)
         cold_set_items_pseudo = set(cold_set_items_pseudo)
         item_counts = defaultdict(int)
-        num_pairs_in_train = 10
         
         def map_it(x):
             if x in cold_set_items_pseudo: 
@@ -274,6 +274,8 @@ class Dataset(object):
     def save(self, path):
         self.trainData.to_pickle(path+".train.data")
         self.testColdStart.to_pickle(path+".testColdStart.data")
+        self.testColdStartPseudo.to_pickle(path+".testColdStartPseudo.data")
+        
         self.testData.to_pickle(path+".test.data")
         self.validData.to_pickle(path+".valid.data")
         

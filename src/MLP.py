@@ -25,6 +25,7 @@ from time import time
 import sys
 import argparse
 import multiprocessing as mp
+from sklearn.utils import shuffle
 
 #################### Arguments ####################
 def parse_args():
@@ -88,136 +89,123 @@ def get_model(num_users, num_items, layers = [20,10], reg_layers=[0,0]):
     
     return model
 
-def get_train_instances_original(dataset, num_negatives):
-    user_input, item_input, labels = [],[],[]
-    num_items = dataset.num_items
-    train_pairs = set(list(zip(dataset.trainData["UserID"].values, dataset.trainData["ItemID"].values)))
-    for index,row in dataset.trainData.iterrows():
-        # positive instance
-        u = row["UserID"]
-        i = row["ItemID"]
-        user_input.append(u)
-        item_input.append(i)
-        labels.append(1)
+class MyModel():
+    def train(self,
+        num_factors = 8,
+        layers = [32,16,8],
+        reg_layers = [0,0,0,0],
+        num_negatives = 4,
+        learner = "adam",
+        learning_rate = 0.001,
+        epochs = 10,
+        batch_size = 256,
+        verbose = 1,
+        out=0,
+        topK = 10,
+        datapath = "../data/movielens",
+        prep_data=False
+        ):
         
-        # negative instances
-        for t in range(num_negatives):
-            j = np.random.randint(num_items)
-            while (u, j) in train_pairs:
-                j = np.random.randint(num_items)
-            user_input.append(u)
-            item_input.append(j)
-            labels.append(0)
-    return user_input, item_input, labels
-def get_train_instances(dataset, num_negatives):
-    user_input, item_input, labels = [],[],[]
-    for index,row in dataset.trainData.iterrows():
-        # positive instance
-        u = row["UserID"]
-        i = row["ItemID"]
-        user_input.append(u)
-        item_input.append(i)
-        labels.append(1)
-        # negative instances
+        topK = 10
+        evaluation_threads = 1 #mp.cpu_count()
+        #print("MLP arguments: %s " %(args))
+        model_out_file = '../model/MLP_%d_%d.h5' %(num_factors, time())
         
-        negatives = row["Negatives"]
-        for _i in range(num_negatives):
-            neg_item_ID = negatives[_i]
-            user_input.append(u)
-            item_input.append(neg_item_ID)
-            labels.append(0)
-    user_input, item_input, labels = shuffle(user_input, item_input, labels)
-    
-    return user_input, item_input, labels
-
-def train(
-    num_factors = 8,
-    layers = [32,16,8],
-    reg_layers = [0,0,0,0],
-    num_negatives = 4,
-    learner = "adam",
-    learning_rate = 0.001,
-    epochs = 10,
-    batch_size = 256,
-    verbose = 1,
-    out=0,
-    topK = 10,
-    datapath = "../data/movielens",
-    prep_data=False
-    ):
-    
-    topK = 10
-    evaluation_threads = 1 #mp.cpu_count()
-    #print("MLP arguments: %s " %(args))
-    model_out_file = 'Pretrain/%s_GMF_%d_%d.h5' %(datapath, num_factors, time())
-    
-    # Loading data
-    t1 = time()
-    
-    dataset = Dataset(datapath, prep_data=prep_data)
-    num_users, num_items = dataset.num_users, dataset.num_items
-    
-    # Build model
-    model = get_model(num_users, num_items, layers, reg_layers)
-    if learner.lower() == "adagrad": 
-        model.compile(optimizer=Adagrad(lr=learning_rate), loss='binary_crossentropy')
-    elif learner.lower() == "rmsprop":
-        model.compile(optimizer=RMSprop(lr=learning_rate), loss='binary_crossentropy')
-    elif learner.lower() == "adam":
-        model.compile(optimizer=Adam(lr=learning_rate), loss='binary_crossentropy')
-    else:
-        model.compile(optimizer=SGD(lr=learning_rate), loss='binary_crossentropy')    
-    
-    # Check Init performance
-    t1 = time()
-    (hits, ndcgs) = evaluate_model(model, dataset.trainData, dataset, topK, evaluation_threads)
-    hr, ndcg = np.array(hits).mean(), np.array(ndcgs).mean()
-    #mf_embedding_norm = np.linalg.norm(model.get_layer('user_embedding').get_weights())+np.linalg.norm(model.get_layer('item_embedding').get_weights())
-    #p_norm = np.linalg.norm(model.get_layer('prediction').get_weights()[0])
-    print('Init Test: HR = %.4f, NDCG = %.4f\t [%.1f s]' % (hr, ndcg, time()-t1))
-       
-    # Train model
-    # Generate training instances
-    _t = dataset.train_data
-    user_input, item_input, labels = _t.userids, _t.itemids, _t.labels
-    
-    
-    best_hr, best_ndcg, best_iter = hr, ndcg, -1
-    for epoch in range(epochs):
+        # Loading data
         t1 = time()
         
+        dataset = Dataset(datapath, prep_data=prep_data)
+        num_users, num_items = dataset.num_users, dataset.num_items
+        
+        # Build model
+        model = get_model(num_users, num_items, layers, reg_layers)
+        if learner.lower() == "adagrad": 
+            model.compile(optimizer=Adagrad(lr=learning_rate), loss='binary_crossentropy')
+        elif learner.lower() == "rmsprop":
+            model.compile(optimizer=RMSprop(lr=learning_rate), loss='binary_crossentropy')
+        elif learner.lower() == "adam":
+            model.compile(optimizer=Adam(lr=learning_rate), loss='binary_crossentropy')
+        else:
+            model.compile(optimizer=SGD(lr=learning_rate), loss='binary_crossentropy')    
+        
+        # Init performance
+        t1 = time()
+        
+        def evaulate(_data):
+            (hits, ndcgs, aucs) = evaluate_model(model, _data, dataset, topK, evaluation_threads)
+            return np.array(hits).mean(), np.array(ndcgs).mean(), np.array(aucs).mean()
+        hr, ndcg, auc = evaulate(dataset.testData)
+        print('Init Test: HR = %.4f, NDCG = %.4f, AUC = %.4f\t [%.1f s]' % (hr, ndcg, auc, time()-t1))
+        #hr, ndcg, auc = evaulate(dataset.testColdStart)
+        #print('Cold Start: HR = %.4f, NDCG = %.4f, AUC = %.4f\t [%.1f s]' % (hr, ndcg, auc, time()-t1))
+        # Train model
+        # Generate training instances
+        _t = dataset.train_data
+        user_input, item_input, labels = _t.userids, _t.itemids, _t.labels
+        
+        best_hr, best_ndcg, best_iter,epoch = hr, ndcg, -1,0
+        
+        class MetricsCallback(keras.callbacks.Callback):
+            def on_train_begin(self, logs={}):
+                self.epoch = 0
+                self.best_hr = 0
+                self.best_ndcg = 0
+                self.best_iter = -1
+            def on_epoch_end(self, batch, logs={}):
+                
+                t2 = time()
+                hr, ndcg, auc = evaulate(dataset.testData)
+                print('Iteration %d [%.1f s]: HR = %.4f, NDCG = %.4f, AUC = %.4f [%.1f s]' 
+                      % (self.epoch,  t2-t1, hr, ndcg, auc, time()-t2))
+                if hr > self.best_hr:
+                    self.best_hr, self.best_ndcg, self.best_iter = hr, ndcg, self.epoch
+                    model.save(model_out_file, overwrite=True)
+                self.epoch+=1
+        
+        t1 = time()
+        metricsClbk = MetricsCallback()
         # Training
         hist = model.fit([user_input, item_input], #input
                          np.array(labels), # labels 
-                         batch_size=batch_size, epochs=1, verbose=0, shuffle=True)
-        t2 = time()
+                         batch_size=batch_size, epochs=epochs, verbose=2, shuffle=True, callbacks=[metricsClbk])
         
-        # Evaluation
-        if epoch %verbose == 0:
-            (hits, ndcgs) = evaluate_model(model, dataset.trainData, dataset, topK, evaluation_threads)
-            hr, ndcg, loss = np.array(hits).mean(), np.array(ndcgs).mean(), hist.history['loss'][0]
-            print('Iteration %d [%.1f s]: HR = %.4f, NDCG = %.4f, loss = %.4f [%.1f s]' 
-                  % (epoch,  t2-t1, hr, ndcg, loss, time()-t2))
-            if hr > best_hr:
-                best_hr, best_ndcg, best_iter = hr, ndcg, epoch
-                if out > 0:
-                    model.save_weights(model_out_file, overwrite=True)
-
-    print("End. Best Iteration %d:  HR = %.4f, NDCG = %.4f. " %(best_iter, best_hr, best_ndcg))
-    if out > 0:
-        print("The best MLP model is saved to %s" %(model_out_file))
-
-train(
-    num_factors = 8,
-    layers = [64,32,16,8],
-    reg_layers = [0,0,0,0],
-    num_negatives = 4,
-    learner = "adam",
-    learning_rate = 0.001,
-    epochs = 10,
-    batch_size = 256,
-    verbose = 1,
-    out=0,
-    topK = 10,
-    datapath = "../data/movielens20M"
-    )
+            # Evaluation
+                
+        self.model = model
+        model = keras.models.load_model(model_out_file)
+        t2 = time()
+        hr, ndcg, auc = evaulate(dataset.testData)
+        print('Test [%.1f s]: HR = %.4f, NDCG = %.4f, AUC = %.4f, [%.1f s]' 
+              % (t2-t1, hr, ndcg, auc, time()-t2))
+        t2 = time()
+        hr, ndcg, auc = evaulate(dataset.testColdStart)
+        print('Cold Start [%.1f s]: HR = %.4f, NDCG = %.4f, AUC = %.4f, [%.1f s]' 
+              % (t2-t1, hr, ndcg, auc, time()-t2))
+        t2 = time()
+        hr, ndcg, auc = evaulate(dataset.testColdStartPseudo)
+        print('Cold Start Pseudo [%.1f s]: HR = %.4f, NDCG = %.4f, AUC = %.4f, [%.1f s]' 
+              % (t2-t1, hr, ndcg, auc, time()-t2))
+        
+        if out > 0:
+            print("The best MLP model is saved to %s" %(model_out_file))
+            
+        self.dataset = dataset
+        self.best_model = model
+        
+if True:
+    m = MyModel()
+    m.train(
+        num_factors = 8,
+        layers = [32,16,8],
+        reg_layers = [0,0,0],
+        num_negatives = 4,
+        learner = "adam",
+        learning_rate = 0.001,
+        epochs = 5,
+        batch_size = 256,
+        verbose = 1,
+        out=0,
+        topK = 10,
+        datapath = "../data/movielens20M",
+        	prep_data=True
+        )
