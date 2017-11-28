@@ -30,7 +30,7 @@ class Dataset(object):
     classdocs
     '''
 
-    def __init__(self, path, prep_data=False,count_per_user_test=2,count_per_user_validation=0,num_negatives_train=5,num_threads=1):
+    def __init__(self, path, prep_data=False,count_per_user_test=2,count_per_user_validation=0,num_negatives_train=3,num_threads=1):
         '''
         Constructor
         '''
@@ -39,7 +39,7 @@ class Dataset(object):
         if prep_data:
             self.item_list = list(self.item_features.index)
             self.trainData = self.load_file(path+".ratings.data.pkl")
-            #self.trainData = self.trainData.sample(frac=0.05)
+            #self.trainData = self.trainData.sample(frac=0.01)
             
             self.split_cold_start_items()
             self.split_train_test(count_per_user_test=count_per_user_test,count_per_user_validation=count_per_user_validation)
@@ -57,7 +57,7 @@ class Dataset(object):
             #self.validData = self.testData
             #self.test_data = self.loadPickle(path+".test_data")    
             self.train_data = self.loadPickle(path+".train_data")
-            
+            self.add_item_features_info()
         self.num_users = 10000#self.trainData["UserID"].max()+1
         self.num_items = len(self.item_features)
         #self.trainData = self.trainData.sample(1000)
@@ -276,7 +276,22 @@ class Dataset(object):
         
         self.train_data = m
         print("gen_train_data [%.1f s]"%(time()-t1))
-
+    def add_item_features_info(self):
+        t1 = time()
+        self.train_data.genre=[]
+        self.train_data.descp = []
+        self.train_data.year = []
+        item_ids = self.train_data.itemids
+        for i in range(len(self.train_data.userids)):
+            d,g,y = self.get_item_feature(item_ids[i])
+            self.train_data.descp.append(d)
+            self.train_data.genre.append(g)
+            self.train_data.year.append(y)
+        self.train_data.genre = np.array(self.train_data.genre)
+        self.train_data.descp = np.array(self.train_data.descp)
+        self.train_data.year = np.array(self.train_data.year)
+        print("add_item_features_info %f",time()-t1)
+        
     def generator_train_data(self,batch_size):
         while(True):
             user_ids = self.train_data.userids
@@ -303,6 +318,8 @@ class Dataset(object):
                 users, items, decs, genre, year, labels = \
                     np.array(users),np.array(items),np.array(decs),np.array(genre),np.array(year),np.array(labels), 
                 yield([users, items, decs, genre, year],labels)
+                
+    
     def generator_test_data(self):
         user_ids = self.test_data.userids
         item_ids = self.test_data.itemids

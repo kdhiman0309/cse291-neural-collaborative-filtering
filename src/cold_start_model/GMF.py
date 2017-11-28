@@ -7,9 +7,7 @@ He Xiangnan et al. Neural Collaborative Filtering. In WWW 2017.
 @author: Xiangnan He (xiangnanhe@gmail.com)
 '''
 import numpy as np
-import theano.tensor as T
 import keras
-from keras import backend as K
 from keras import initializers
 from keras.models import Sequential, Model, load_model, save_model
 from keras.layers.core import Dense, Lambda, Activation
@@ -62,15 +60,15 @@ def get_model(num_users, num_items, latent_dim, regs=[0,0]):
     user_input = Input(shape=(1,), dtype='int32', name = 'user_input')
     item_input = Input(shape=(1,), dtype='int32', name = 'item_input')
     text_input_sparse = Input(shape=(200,), name = 'text_input_sparse')
-    tfidf_dense = Dense(20, activation='relu', kernel_initializer='lecun_uniform',
+    tfidf_dense = Dense(15, activation='relu', kernel_initializer='lecun_uniform',
                             name = "tfidf_dense_layer")(text_input_sparse)
 
     item_feature_input_genre = Input(shape=(24,), name = 'item_feature_input_genre')
     item_feature_input_year = Input(shape=(6,), name = 'item_feature_input_year')
-    genre_dense = Dense(8, activation='relu', kernel_initializer='lecun_uniform',
+    genre_dense = Dense(5, activation='relu', kernel_initializer='lecun_uniform',
                             name = "genre_dense")(item_feature_input_genre)
-    year_dense = Dense(4, activation='relu', kernel_initializer='lecun_uniform',
-                            name = "year_dense ")(item_feature_input_year)
+    year_dense = Dense(3, activation='relu', kernel_initializer='lecun_uniform',
+                            name = "year_dense")(item_feature_input_year)
     
     complete_item_features = keras.layers.concatenate([tfidf_dense, genre_dense,year_dense])
 
@@ -85,75 +83,28 @@ def get_model(num_users, num_items, latent_dim, regs=[0,0]):
     user_latent = Flatten()(MF_Embedding_User(user_input))
     item_latent = Flatten()(MF_Embedding_Item(item_input))
     
+    item_features_latent = Dense(latent_dim, activation='relu', kernel_initializer='lecun_uniform', name = 'dense1')(complete_item_features)
+    
+    item_latent_new = keras.layers.add([item_latent,item_features_latent])
+    multiply_layer = keras.layers.multiply([user_latent, item_latent_new])
+    
     # Element-wise product of user and item embeddings 
-    predict_vector = keras.layers.concatenate([keras.layers.multiply([user_latent, item_latent]),complete_item_features])
+    #item_user_layer = keras.layers.concatenate([user_latent,complete_item_features])
     
     
-    #dense1 = Dense(latent_dim, activation='relu', kernel_initializer='lecun_uniform', name = 'dense1')(predict_vector)
+    #dense1 = Dense(latent_dim, activation='relu', kernel_initializer='lecun_uniform', name = 'dense1')(item_user_layer)
+    #concat_two = keras.layers.concatenate([multiply_layer,dense1])
+    
     #dense2 = Dense(int(latent_dim/2), activation='relu', kernel_initializer='lecun_uniform', name = 'dense2')(dense1)
-    
     # Final prediction layer
     #prediction = Lambda(lambda x: K.sigmoid(K.sum(x)), output_shape=(1,))(predict_vector)
-    prediction = Dense(1, activation='sigmoid', kernel_initializer='lecun_uniform', name = 'prediction')(predict_vector)
+    prediction = Dense(1, activation='sigmoid', kernel_initializer='lecun_uniform', name = 'prediction')(multiply_layer)
     
     model = Model(inputs=[user_input, item_input, text_input_sparse, item_feature_input_genre, item_feature_input_year], 
                 outputs=prediction)
 
     return model
 
-
-def get_train_instances_original(dataset, num_negatives):
-    user_input, item_input, labels = [],[],[]
-    num_items = dataset.num_items
-    train_pairs = set(list(zip(dataset.trainData["UserID"].values, dataset.trainData["ItemID"].values)))
-    for index,row in dataset.trainData.iterrows():
-        # positive instance
-        u = row["UserID"]
-        i = row["ItemID"]
-        user_input.append(u)
-        item_input.append(i)
-        labels.append(1)
-        
-        # negative instances
-        for t in range(num_negatives):
-            j = np.random.randint(num_items)
-            while (u, j) in train_pairs:
-                j = np.random.randint(num_items)
-            user_input.append(u)
-            item_input.append(j)
-            labels.append(0)
-    return user_input, item_input, labels
-
-def get_train_instances(dataset, num_negatives):
-    user_input, item_input, labels = [],[],[]
-    item_des, item_year, item_genre = [],[],[]
-
-    for index,row in dataset.trainData.iterrows():
-        # positive instance
-        u = row["UserID"]
-        i = row["ItemID"]
-        user_input.append(u)
-        item_input.append(i)
-        labels.append(1)
-        d, g, y = dataset.get_item_feature(i)
-        item_des.append(d)
-        item_year.append(y)
-        item_genre.append(g)
-
-        # negative instances        
-        negatives = row["Negatives"]
-        for _i in range(num_negatives):
-            neg_item_ID = negatives[_i]
-            user_input.append(u)
-            item_input.append(neg_item_ID)
-            labels.append(0)
-            d, g, y = dataset.get_item_feature(neg_item_ID)
-            item_des.append(d)
-            item_year.append(y)
-            item_genre.append(g)
-
-    user_input, item_input, labels, item_des, item_year, item_genre = shuffle(user_input, item_input, labels, item_des, item_year, item_genre)
-    return user_input, item_input, labels, item_des, item_year, item_genre
 
 class MyModel():
     def train(self,
@@ -233,9 +184,13 @@ class MyModel():
         t1 = time()
         metricsClbk = MetricsCallback()
         # Training
-        hist = model.fit_generator(dataset.generator_train_data(batch_size),steps_per_epoch=1+int((len(dataset.train_data.userids)/batch_size)),
+        #hist = model.fit_generator(dataset.generator_train_data(batch_size),steps_per_epoch=1+int((len(dataset.train_data.userids)/batch_size)),
+        #                          epochs=epochs, verbose=2, shuffle=True, callbacks=[metricsClbk])
+        _t = dataset.train_data
+        hist = model.fit([_t.userids, _t.itemids, _t.descp, _t.genre, _t.year], _t.labels, batch_size=batch_size,
                                   epochs=epochs, verbose=2, shuffle=True, callbacks=[metricsClbk])
-		# Evaluation                
+		# E
+        #Evaluation                
         self.model = model
         print("End. Best Iteration %d:  HR = %.4f, NDCG = %.4f. " %(best_iter, best_hr, best_ndcg))
         model = keras.models.load_model(model_out_file)
@@ -263,7 +218,7 @@ if True:
         num_negatives = 5,
         learner = "adam",
         learning_rate = 0.001,
-        epochs = 5,
+        epochs = 10,
         batch_size = 256,
         verbose = 1,
         out=1,
