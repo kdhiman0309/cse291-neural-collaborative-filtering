@@ -30,7 +30,7 @@ class Dataset(object):
     classdocs
     '''
 
-    def __init__(self, path, prep_data=False,count_per_user_test=1,count_per_user_validation=0,num_negatives_train=5,num_threads=1):
+    def __init__(self, path, prep_data=False,count_per_user_test=2,count_per_user_validation=0,num_negatives_train=5,num_threads=1):
         '''
         Constructor
         '''
@@ -39,9 +39,9 @@ class Dataset(object):
         if prep_data:
             self.item_list = list(self.item_features.index)
             self.trainData = self.load_file(path+".ratings.data.pkl")
-            self.trainData = self.trainData.sample(frac=0.01)
+            #self.trainData = self.trainData.sample(frac=0.05)
             
-            self.split_clod_start_items()
+            self.split_cold_start_items()
             self.split_train_test(count_per_user_test=count_per_user_test,count_per_user_validation=count_per_user_validation)
             self.negative_sampling(num_negatives_train=num_negatives_train)
             self.gen_train_data()
@@ -52,6 +52,7 @@ class Dataset(object):
             #self.trainData = self.load_file(path + ".train.data")
             self.testData = self.load_file(path + ".test.data")
             self.testColdStart = self.load_file(path + ".testColdStart.data")
+            self.testColdStartPseudo = self.load_file(path + ".testColdStartPseudo.data")
             ##self.validData = self.load_file(path + ".valid.data")
             #self.validData = self.testData
             #self.test_data = self.loadPickle(path+".test_data")    
@@ -65,16 +66,40 @@ class Dataset(object):
     def load_file(self, filename):        
         return pd.read_pickle(filename)
     
-    def split_clod_start_items(self, frac=0.1):
+    def split_cold_start_items(self, frac=0.1, num_pairs_in_train=10):
         items = self.item_features.ItemID.unique()
-        cold_set_items = set(random.sample(set(items), int(len(items)*frac)))
+        cold_set_items = random.sample(set(items), int(len(items)*frac))
+        cold_set_items = shuffle(cold_set_items)
+        cold_set_items_pseudo = cold_set_items[:int(len(cold_set_items)/2)]
+        cold_set_items = cold_set_items[int(len(cold_set_items)/2):]
+        cold_set_items = set(cold_set_items)
+        cold_set_items_pseudo = set(cold_set_items_pseudo)
+        item_counts = defaultdict(int)
+        num_pairs_in_train = 10
+        
+        def map_it(x):
+            if x in cold_set_items_pseudo: 
+                if item_counts[x] < num_pairs_in_train:
+                    item_counts[x]+=1
+                    return False
+                else:
+                    return True
+            else:
+                return False
+        
+        self.train_data = shuffle(self.trainData)
+        
+        self.testColdStartPseudo = self.trainData[self.trainData.ItemID.apply(lambda x: map_it(x))]
         self.testColdStart = self.trainData[self.trainData.ItemID.apply(lambda x: x in cold_set_items)]
-        self.trainData = self.trainData.loc[list(set(self.trainData.index) - set(self.testColdStart.index))]
+        
+        self.trainData = self.trainData.loc[list(set(self.trainData.index) - set(self.testColdStart.index) - set(self.testColdStartPseudo.index))]
+    
     
     def split_train_test(self,count_per_user_test=1,count_per_user_validation=0):
         df = self.trainData
         df = df.sort_values("Timestamp", ascending=False)
-       
+        #df = shuffle(df)
+        
         user_counts = defaultdict(int)
         rows = []
         rows_valid = []
@@ -97,15 +122,10 @@ class Dataset(object):
     def negative_sampling(self, num_negatives_train=4):
         user_item_pairs = defaultdict(set)
         
-        for x in self.testData[["UserID", "ItemID"]].values:
-            user_item_pairs[x[0]].add(x[1])
+        for _data in [self.testData, self.testColdStart, self.testColdStartPseudo, self.testData, self.validData]:
+            for x in _data[["UserID", "ItemID"]].values:
+                user_item_pairs[x[0]].add(x[1])
             
-        for x in self.trainData[["UserID", "ItemID"]].values:
-            user_item_pairs[x[0]].add(x[1])
-            
-        for x in self.validData[["UserID", "ItemID"]].values:
-            user_item_pairs[x[0]].add(x[1])
-        
         
         num_items = len(self.item_list)
         user_item_pairs2 = copy.deepcopy(user_item_pairs)
@@ -129,27 +149,68 @@ class Dataset(object):
         
         num_negs_per_positive = 99
         self.testData["Negatives"] = self.testData["UserID"].apply(lambda x: get_negs(x))
-        user_item_pairs = user_item_pairs2
-        user_item_pairs2 = copy.deepcopy(user_item_pairs)
-        
+        #user_item_pairs = user_item_pairs2
+        #user_item_pairs2 = copy.deepcopy(user_item_pairs)
         
         num_negs_per_positive = 99
-        self.validData["Negatives"] = self.validData["UserID"].apply(lambda x: get_negs(x))
+        self.testColdStart["Negatives"] = self.testColdStart["UserID"].apply(lambda x: get_negs(x))
+        #user_item_pairs = user_item_pairs2
+        #user_item_pairs2 = copy.deepcopy(user_item_pairs)
+        
+        num_negs_per_positive = 99
+        self.testColdStartPseudo["Negatives"] = self.testColdStartPseudo["UserID"].apply(lambda x: get_negs(x))
         user_item_pairs = user_item_pairs2
         user_item_pairs2 = copy.deepcopy(user_item_pairs)
+        
+        #num_negs_per_positive = 99
+        #self.validData["Negatives"] = self.validData["UserID"].apply(lambda x: get_negs(x))
+        #user_item_pairs = user_item_pairs2
+        #user_item_pairs2 = copy.deepcopy(user_item_pairs)
     
         num_negs_per_positive = num_negatives_train
         self.trainData["Negatives"] = self.trainData["UserID"].apply(lambda x: get_negs(x))
-        
-        
 
-    def get_item_feature(self,itemid):
-        curr_row = self.item_features.iloc[itemid]
-        return curr_row["Description"],curr_row["Genre"],curr_row["Year"]
-  
     def get_item_feature_bulk(self,itemids):
         curr_row = self.item_features.iloc[itemids]
         return  np.array(curr_row["Description"].tolist()), np.array(curr_row["Genre"].tolist()), np.array(curr_row["Year"].tolist())
+    
+    def get_item_feature(self,itemid):
+      curr_row = self.item_features.iloc[itemid]
+      return curr_row["Description"],curr_row["Genre"],curr_row["Year"]
+
+    '''
+    def _one_test_data(self,index):
+        row = self.testData.loc[index]
+    #for index, row in self.testData.iterrows():
+        items = row["Negatives"]#_testNegatives[idx]
+        u = row["UserID"]
+        gtItem = row["ItemID"]
+        items.append(gtItem)
+        # Get prediction scores
+        users = np.full(len(items), u, dtype = 'int32')
+        
+        m = ModelData()
+    
+        m.userids = users
+        m.itemids = np.array(items)
+        m.gtitem = gtItem
+        return m
+    
+    def gen_test_data(self):
+        t1 = time()
+            #test_data.append(m)
+        
+        if self.num_threads>1:
+            pool = multiprocessing.Pool(processes=self.num_threads)
+            res = pool.map(self._one_test_data, self.testData.index)
+            pool.close()
+            pool.join()
+            self.test_data = [r for r in res]
+            
+        else:    
+            self.test_data = [self._one_test_data(_i) for _i in self.testData.index]
+        print("gen_test_data [%.1f s]"%(time()-t1))
+    '''
     
     def _one_train_data(self, index):
         user_input, item_input, labels = [],[],[]
@@ -215,6 +276,7 @@ class Dataset(object):
         
         self.train_data = m
         print("gen_train_data [%.1f s]"%(time()-t1))
+
     def generator_train_data(self,batch_size):
         while(True):
             user_ids = self.train_data.userids
@@ -251,6 +313,7 @@ class Dataset(object):
     def save(self, path):
         self.trainData.to_pickle(path+".train.data")
         self.testColdStart.to_pickle(path+".testColdStart.data")
+        self.testColdStartPseudo.to_pickle(path+".testColdStartPseudo.data")
         self.testData.to_pickle(path+".test.data")
         self.validData.to_pickle(path+".valid.data")
         

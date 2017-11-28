@@ -62,18 +62,19 @@ def eval_one_rating(row, model, K, dataset):
     predictions = model.predict([users, np.array(items), descp,genre,year], 
                                  batch_size=128, verbose=0)
     map_item_score = {}
-    user_auc = 0
+    user_auc = 0.0
     gtitem_score = predictions[-1]
     for i in range(len(items)):
         item = items[i]
         map_item_score[item] = predictions[i]
-        user_auc += (predictions[i] < gtitem_score) 
+        user_auc += 1.0 if predictions[i] < gtitem_score else 0.0
+    items.pop()
     
     # Evaluate top rank list
     ranklist = heapq.nlargest(K, map_item_score, key=map_item_score.get)
     hr = getHitRatio(ranklist, gtItem)
     ndcg = getNDCG(ranklist, gtItem)
-    return (hr, ndcg, user_auc/(len(items)-1))
+    return (hr, ndcg, user_auc/(len(items)))
 
 def getHitRatio(ranklist, gtItem):
     for item in ranklist:
