@@ -75,12 +75,12 @@ def get_model(num_users, num_items, latent_dim, regs=[0,0]):
     # Element-wise product of user and item embeddings 
     predict_vector = keras.layers.multiply([user_latent, item_latent])
     
-    dense1 = Dense(latent_dim, activation='relu', kernel_initializer='lecun_uniform', name = 'dense1')(predict_vector)
-    dense2 = Dense(int(latent_dim/2), activation='relu', kernel_initializer='lecun_uniform', name = 'dense2')(dense1)
+    #dense1 = Dense(latent_dim, activation='relu', kernel_initializer='lecun_uniform', name = 'dense1')(predict_vector)
+    #dense2 = Dense(int(latent_dim/2), activation='relu', kernel_initializer='lecun_uniform', name = 'dense2')(dense1)
     
     # Final prediction layer
     #prediction = Lambda(lambda x: K.sigmoid(K.sum(x)), output_shape=(1,))(predict_vector)
-    prediction = Dense(1, activation='sigmoid', kernel_initializer='lecun_uniform', name = 'prediction')(dense2)
+    prediction = Dense(1, activation='sigmoid', kernel_initializer='lecun_uniform', name = 'prediction')(predict_vector)
     
     model = Model(inputs=[user_input, item_input], 
                 outputs=prediction)
@@ -221,7 +221,7 @@ class MyModel():
         print('Cold Start [%.1f s]: HR = %.4f, NDCG = %.4f, AUC = %.4f, [%.1f s]' 
               % (t2-t1, hr, ndcg, auc, time()-t2))
         t2 = time()
-        hr, ndcg, auc = evaulate(dataset.testColdStartPsuedo)
+        hr, ndcg, auc = evaulate(dataset.testColdStartPseudo)
         print('Cold Start Pseudo [%.1f s]: HR = %.4f, NDCG = %.4f, AUC = %.4f, [%.1f s]' 
               % (t2-t1, hr, ndcg, auc, time()-t2))
         
@@ -246,5 +246,5 @@ if True:
         out=1,
         topK = 10,
         datapath = "../data/movielens20M",
-    		prep_data=False
+    		prep_data=True
         )

@@ -40,7 +40,7 @@ class Dataset(object):
         if prep_data:
             self.item_list = list(self.item_features.index)
             self.trainData = self.load_file(path+".ratings.data.pkl")
-            #self.trainData = self.trainData.sample(frac=0.05)
+            #self.trainData = self.trainData.sample(frac=0.01)
             self.split_cold_start_items()
             self.split_train_test(count_per_user_test=count_per_user_test,count_per_user_validation=count_per_user_validation)
             self.negative_sampling(num_negatives_train=num_negatives_train)
@@ -88,10 +88,10 @@ class Dataset(object):
         
         self.train_data = shuffle(self.trainData)
         
-        self.testColdStartPsuedo = self.trainData[self.trainData.ItemID.apply(lambda x: map_it(x))]
+        self.testColdStartPseudo = self.trainData[self.trainData.ItemID.apply(lambda x: map_it(x))]
         self.testColdStart = self.trainData[self.trainData.ItemID.apply(lambda x: x in cold_set_items)]
         
-        self.trainData = self.trainData.loc[list(set(self.trainData.index) - set(self.testColdStart.index) - set(self.testColdStartPsuedo.index))]
+        self.trainData = self.trainData.loc[list(set(self.trainData.index) - set(self.testColdStart.index) - set(self.testColdStartPseudo.index))]
     
     def split_train_test(self,count_per_user_test=1,count_per_user_validation=0):
         df = self.trainData
@@ -120,7 +120,7 @@ class Dataset(object):
     def negative_sampling(self, num_negatives_train=4):
         user_item_pairs = defaultdict(set)
         
-        for _data in [self.testData, self.testColdStart, self.testColdStartPsuedo, self.testData, self.validData]:
+        for _data in [self.testData, self.testColdStart, self.testColdStartPseudo, self.testData, self.validData]:
             for x in _data[["UserID", "ItemID"]].values:
                 user_item_pairs[x[0]].add(x[1])
             
@@ -156,7 +156,7 @@ class Dataset(object):
         #user_item_pairs2 = copy.deepcopy(user_item_pairs)
         
         num_negs_per_positive = 99
-        self.testColdStartPsuedo["Negatives"] = self.testColdStartPsuedo["UserID"].apply(lambda x: get_negs(x))
+        self.testColdStartPseudo["Negatives"] = self.testColdStartPseudo["UserID"].apply(lambda x: get_negs(x))
         user_item_pairs = user_item_pairs2
         user_item_pairs2 = copy.deepcopy(user_item_pairs)
         
