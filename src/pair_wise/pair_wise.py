@@ -56,7 +56,80 @@ def parse_args():
 def init_normal():
     return initializers.RandomNormal(stddev=0.01)
 
+def get_gmf_pairwise_base_model(latent_dim):
+    input1 = Input(shape=(latent_dim,), dtype='int32', name = 'input1')
+    input2 = Input(shape=(latent_dim,), dtype='int32', name = 'input2')
+    
+    # Element-wise product of user and item embeddings 
+    predict_vector = keras.layers.multiply([input1, input2])
+    
+    # Final prediction layer
+    prediction = Dense(1, activation='linear', kernel_initializer='lecun_uniform', name = 'prediction')(predict_vector)
+    
+    model = Model(inputs=[input1, input2], 
+                outputs=prediction)
+    return model
 
+def get_gmf_pairwise_base_model2(latent_dim):
+    input1 = Input(shape=(latent_dim,), dtype='int32', name = 'input1')
+    input2 = Input(shape=(latent_dim,), dtype='int32', name = 'input2')
+    
+    # Element-wise product of user and item embeddings 
+    predict_vector = keras.layers.multiply([input1, input2])
+    
+    
+    model = Model(inputs=[input1, input2], 
+                outputs=predict_vector)
+    return model
+
+def get_gmf_pairwise_model(num_users,num_items,latent_dim,regs=[0,0]):
+    user_input = Input(shape=(1,), dtype='int32', name = 'user_input')
+    item1_input = Input(shape=(1,), dtype='int32', name = 'item1_input')
+    item2_input = Input(shape=(1,), dtype='int32', name = 'item2_input')
+
+    MF_Embedding_User = Embedding(input_dim = num_users, output_dim = latent_dim, name = 'user_embedding',
+                                  embeddings_initializer = init_normal(), embeddings_regularizer= l2(regs[0]), input_length=1)
+    MF_Embedding_Item = Embedding(input_dim = num_items, output_dim = latent_dim, name = 'item_embedding',
+                                  embeddings_initializer = init_normal(), embeddings_regularizer= l2(regs[1]), input_length=1)   
+    user_latent = Flatten(name="user_latent")(MF_Embedding_User(user_input))
+    item1_latent = Flatten(name="item1_latent")(MF_Embedding_Item(item1_input))
+    item2_latent = Flatten(name="item2_latent")(MF_Embedding_Item(item2_input))
+    model =  get_gmf_pairwise_base_model(latent_dim)
+    prediction1 = model([user_latent,item1_latent])
+    prediction2 = model([user_latent,item2_latent])
+    subtract_layer = Lambda(lambda inputs: inputs[0] - inputs[1],
+                        output_shape=lambda shapes: shapes[0])([prediction1,prediction2])
+    #prediction = Dense(1, activation='sigmoid', kernel_initializer='lecun_uniform', name = 'prediction')(keras.layers.concatenate([prediction1,prediction2]))
+    prediction = Activation('sigmoid')(subtract_layer)
+    pairwise_model = Model(inputs=[user_input, item1_input, item2_input],outputs=prediction)
+    inference_model = Model(inputs=[user_input, item1_input, item2_input],outputs=prediction1)
+    print(pairwise_model.summary())
+    return pairwise_model,inference_model 
+
+def get_gmf_pairwise_model2(num_users,num_items,latent_dim,regs=[0,0]):
+    user_input = Input(shape=(1,), dtype='int32', name = 'user_input')
+    item1_input = Input(shape=(1,), dtype='int32', name = 'item1_input')
+    item2_input = Input(shape=(1,), dtype='int32', name = 'item2_input')
+
+    MF_Embedding_User = Embedding(input_dim = num_users, output_dim = latent_dim, name = 'user_embedding',
+                                  embeddings_initializer = init_normal(), embeddings_regularizer= l2(regs[0]), input_length=1)
+    MF_Embedding_Item = Embedding(input_dim = num_items, output_dim = latent_dim, name = 'item_embedding',
+                                  embeddings_initializer = init_normal(), embeddings_regularizer= l2(regs[1]), input_length=1)   
+    user_latent = Flatten(name="user_latent")(MF_Embedding_User(user_input))
+    item1_latent = Flatten(name="item1_latent")(MF_Embedding_Item(item1_input))
+    item2_latent = Flatten(name="item2_latent")(MF_Embedding_Item(item2_input))
+    model =  get_gmf_pairwise_base_model2(latent_dim)
+    prediction1 = model([user_latent,item1_latent])
+    prediction2 = model([user_latent,item2_latent])
+    #subtract_layer = Lambda(lambda inputs: inputs[0] - inputs[1],
+    #                    output_shape=lambda shapes: shapes[0])([prediction1,prediction2])
+    prediction = Dense(1, activation='sigmoid', kernel_initializer='lecun_uniform', name = 'prediction')(keras.layers.concatenate([prediction1,prediction2]))
+    #prediction = Activation('sigmoid')(subtract_layer)
+    pairwise_model = Model(inputs=[user_input, item1_input, item2_input],outputs=prediction)
+    inference_model = Model(inputs=[user_input, item1_input, item2_input],outputs=prediction1)
+    print(pairwise_model.summary())
+    return pairwise_model,inference_model 
+    
 def get_model(num_users, num_items, latent_dim, regs=[0,0]):
     # Input variables
     user_input = Input(shape=(1,), dtype='int32', name = 'user_input')
@@ -190,107 +263,129 @@ def get_train_instances(dataset, num_negatives):
     
     return user_input, item_input, labels
 
-def train(
-    num_factors = 8,
-    regs = [0,0],
-    num_negatives = 4,
-    learner = "adam",
-    learning_rate = 0.001,
-    epochs = 10,
-    batch_size = 256,
-    verbose = 1,
-    out=0,
-    topK = 10,
-    datapath = "../data/movielens"
-    ):
-    evaluation_threads = 6 #mp.cpu_count()
-    #print("GMF arguments: %s" %(args))
-    model_out_file = 'Pretrain/%s_GMF_%d_%d.h5' %(datapath, num_factors, time())
-    
-    # Loading data
-    t1 = time()
-    
-    dataset = Dataset(datapath)
-    trainData, validData, testData = dataset.trainData, dataset.validData, dataset.testData
-    num_users, num_items = dataset.num_users, dataset.num_items
-    print("Load data done [%.1f s]. #user=%d, #item=%d, #train=%d, #test=%d" 
-          %(time()-t1, num_users, num_items, len(trainData), len(testData)))
-    
-    # Build model
-    model,inference_model = get_model(num_users, num_items, num_factors, regs)
-    if learner.lower() == "adagrad": 
-        model.compile(optimizer=Adagrad(lr=learning_rate), loss='binary_crossentropy')
-    elif learner.lower() == "rmsprop":
-        model.compile(optimizer=RMSprop(lr=learning_rate), loss='binary_crossentropy')
-    elif learner.lower() == "adam":
-        model.compile(optimizer=Adam(lr=learning_rate), loss='binary_crossentropy')
-        #model.compile(optimizer=Adam(), loss='binary_crossentropy')
-    else:
-        model.compile(optimizer=SGD(lr=learning_rate), loss='binary_crossentropy')
-    
-    #model.compile(optimizer="adam", loss='binary_crossentropy')
-    #print(model.summary())
-    
-    # Init performance
-    t1 = time()
-    (hits, ndcgs) = evaluate_model(model, testData, topK, evaluation_threads)
-    hr, ndcg = np.array(hits).mean(), np.array(ndcgs).mean()
-    #mf_embedding_norm = np.linalg.norm(model.get_layer('user_embedding').get_weights())+np.linalg.norm(model.get_layer('item_embedding').get_weights())
-    #p_norm = np.linalg.norm(model.get_layer('prediction').get_weights()[0])
-    print('Init Test: HR = %.4f, NDCG = %.4f\t [%.1f s]' % (hr, ndcg, time()-t1))
-    
-    #(hits, ndcgs) = evaluate_model(model, validData, topK, evaluation_threads)
-    #hr, ndcg = np.array(hits).mean(), np.array(ndcgs).mean()
-    #print('Init Valid: HR = %.4f, NDCG = %.4f\t [%.1f s]' % (hr, ndcg, time()-t1))
-    
-    # Train model
-    # Generate training instances
-    user_input, item_input,item_input_2, labels = get_train_instances_original(dataset, num_negatives)
-    user_input = np.array(user_input)
-    item_input = np.array(item_input)
-    item_input_2 = np.array(item_input_2)
-    labels = np.array(labels)
-    
-    best_hr, best_ndcg, best_iter = hr, ndcg, -1
-    for epoch in range(epochs):
+class MyModel():
+    def train(self,
+        num_factors=8,
+        data_path="../../data/movielens20M",
+        num_epochs = 20,
+        batch_size = 256,
+        mf_dim = 8,
+        layers = [32,16,8],
+        reg_mf = 0,
+        reg_layers = [0,0,0],
+        num_negatives = 4,
+        learning_rate = 0.001,
+        learner = "adam",
+        verbose = 1,
+        mf_pretrain = '',
+        mlp_pretrain = '',
+        out=0,
+        prep_data=False
+        ):
+        evaluation_threads = 1 #mp.cpu_count()
+        model_out_file = '../../model/GMF_%d_%d.h5' %(num_factors, time())
+        
+        # Loading data
         t1 = time()
         
-        # Training
-        hist = model.fit([user_input, item_input, item_input_2], #input
-                         labels, # labels 
-                         batch_size=batch_size, epochs=1, verbose=0, shuffle=True)
-        t2 = time()
+        dataset = Dataset(data_path,prep_data=prep_data)
+        trainData, testData = dataset.train_data, dataset.testData
+        num_users, num_items = dataset.num_users, dataset.num_items
         
-        # Evaluation
-        if epoch %verbose == 0:
-            #(hits, ndcgs) = evaluate_model(model, validData, topK, evaluation_threads)
-            (hits_test, ndcgs_test) = evaluate_model(model, testData, topK, evaluation_threads)
-    
-            hr, ndcg, loss = np.array(hits).mean(), np.array(ndcgs).mean(), hist.history['loss'][0]
-            hr_test, ndcg_test = np.array(hits_test).mean(), np.array(ndcgs_test).mean()
-            print('Iteration %d [%.1f s]: (Valid) HR = %.4f, NDCG = %.4f, (Test) HR = %.4f, NDCG = %.4f, loss = %.4f [%.1f s]' 
-                  % (epoch,  t2-t1, 0, 0, hr_test, ndcg_test, loss, time()-t2))
-            if hr > best_hr:
-                best_hr, best_ndcg, best_iter = hr, ndcg, epoch
-                if out > 0:
-                    model.save_weights(model_out_file, overwrite=True)
+        # Build model
+        #model,inference_model = get_gmf_pairwise_model()
+        model,inference_model = get_gmf_pairwise_model(num_users, num_items, num_factors)
+        #model,inference_model = get_model_sep(num_users, num_items, num_factors)
 
-    print("End. Best Iteration %d:  HR = %.4f, NDCG = %.4f. " %(best_iter, best_hr, best_ndcg))
-    if out > 0:
-        print("The best GMF model is saved to %s" %(model_out_file))
-    
+        if learner.lower() == "adagrad": 
+            model.compile(optimizer=Adagrad(lr=learning_rate), loss='binary_crossentropy')
+        elif learner.lower() == "rmsprop":
+            model.compile(optimizer=RMSprop(lr=learning_rate), loss='binary_crossentropy')
+        elif learner.lower() == "adam":
+            model.compile(optimizer=Adam(lr=learning_rate), loss='binary_crossentropy')
+            #model.compile(optimizer=Adam(), loss='binary_crossentropy')
+        else:
+            model.compile(optimizer=SGD(lr=learning_rate), loss='binary_crossentropy')
+        
+        topK=10
+        def evaulate(_data):
+            (hits, ndcgs, aucs) = evaluate_model(model, _data, dataset, topK, evaluation_threads)
+            return np.array(hits).mean(), np.array(ndcgs).mean(), np.array(aucs).mean()
+        
+        # Init performance
+        t1 = time()
+        hr, ndcg, auc = evaulate(dataset.testData)
+        print('Init Test: HR = %.4f, NDCG = %.4f, AUC = %.4f\t [%.1f s]' % (hr, ndcg, auc, time()-t1))
+        
+        _t = dataset.train_data
+        user_input, item1_input,item2_input, labels = _t.userids, _t.item1ids,_t.item2ids, _t.labels        
+        best_hr, best_ndcg, best_iter,epoch = hr, ndcg, -1,0
+        
+        class MetricsCallback(keras.callbacks.Callback):
+            def on_train_begin(self, logs={}):
+                self.epoch = 0
+                self.best_hr = 0
+                self.best_ndcg = 0
+                self.best_iter = -1
+            def on_epoch_end(self, batch, logs={}):
+                
+                t2 = time()
+                hr, ndcg, auc = evaulate(dataset.testData)
+                print('Iteration %d [%.1f s]: HR = %.4f, NDCG = %.4f, AUC = %.4f [%.1f s]' 
+                      % (self.epoch,  t2-t1, hr, ndcg, auc, time()-t2))
+                if hr > self.best_hr:
+                    self.best_hr, self.best_ndcg, self.best_iter = hr, ndcg, self.epoch
+                    model.save(model_out_file, overwrite=True)
+                self.epoch+=1
+        
+        t1 = time()
+        metricsClbk = MetricsCallback()
+        # Training
+        hist = model.fit([user_input, item1_input, item2_input], #input
+                         np.array(labels), # labels 
+                         batch_size=batch_size, epochs=num_epochs, verbose=2, shuffle=True, callbacks=[metricsClbk])
+        
+            # Evaluation
+                
+        self.model = model
+        model = keras.models.load_model(model_out_file)
+        t2 = time()
+        hr, ndcg, auc = evaulate(dataset.testData)
+        print('Test [%.1f s]: HR = %.4f, NDCG = %.4f, AUC = %.4f, [%.1f s]' 
+              % (t2-t1, hr, ndcg, auc, time()-t2))
+        t2 = time()
+        hr, ndcg, auc = evaulate(dataset.testColdStart)
+        print('Cold Start [%.1f s]: HR = %.4f, NDCG = %.4f, AUC = %.4f, [%.1f s]' 
+              % (t2-t1, hr, ndcg, auc, time()-t2))
+        t2 = time()
+        hr, ndcg, auc = evaulate(dataset.testColdStartPseudo)
+        print('Cold Start Pseudo [%.1f s]: HR = %.4f, NDCG = %.4f, AUC = %.4f, [%.1f s]' 
+              % (t2-t1, hr, ndcg, auc, time()-t2))
+        
+        if out > 0:
+            print("The best NeuMF model is saved to %s" %(model_out_file))
+            
+        self.dataset = dataset
+        self.best_model = model
 
-train(
-    num_factors = 8,
-    regs = [0,0],
-    num_negatives = 8,
-    learner = "adam",
-    learning_rate = 0.001,
-    epochs = 15,
-    batch_size = 256,
-    verbose = 1,
-    out=0,
-    topK = 10,
-    datapath = "../../data/movielens"
+if True:
+    m = MyModel()
+    m.train(
+        num_factors=8,
+        data_path="../../data/movielens20M",
+        num_epochs = 10,
+        batch_size = 256,
+        mf_dim = 8,
+        layers = [32,16,8],
+        reg_mf = 0,
+        reg_layers = [0,0,0],
+        num_negatives = 4,
+        learning_rate = 0.001,
+        learner = "adam",
+        verbose = 1,
+        mf_pretrain = '',
+        mlp_pretrain = '',
+        out=0,
+        prep_data=False
     )
 

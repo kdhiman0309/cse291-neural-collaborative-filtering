@@ -20,7 +20,7 @@ _model = None
 _testData = None
 _K = None
 
-def evaluate_model(model, testData, K, num_thread):
+def evaluate_model(model, testData, dataset, K, num_thread):
     """
     Evaluate the performance (Hit_Ratio, NDCG) of top-K recommendation
     Return: score of each test rating.
@@ -32,21 +32,23 @@ def evaluate_model(model, testData, K, num_thread):
     _testData = testData
     _K = K
 
-    hits, ndcgs = [],[]
+    hits, ndcgs, aucs = [],[],[]
     if(num_thread > 1): # Multi-thread
         pool = multiprocessing.Pool(processes=num_thread)
-        res = pool.map(eval_one_rating_pairwise_mp, range(len(testData)))
+        res = pool.map(eval_one_rating_pairwise_mp, testData.index)
         pool.close()
         pool.join()
         hits = [r[0] for r in res]
         ndcgs = [r[1] for r in res]
-        return (hits, ndcgs)
+        aucs = [r[2] for r in res]
+        return (hits, ndcgs,aucs)
     # Single thread
     for index, row in testData.iterrows():
-        (hr,ndcg) = eval_one_rating_pairwise(row, model, K)
+        (hr,ndcg,auc) = eval_one_rating_pairwise(row, model, K)
         hits.append(hr)
-        ndcgs.append(ndcg)      
-    return (hits, ndcgs)
+        ndcgs.append(ndcg)
+        aucs.append(auc)
+    return (hits, ndcgs,aucs)
 
 def eval_one_rating_pairwise_mp(idx):
      return eval_one_rating_pairwise(_testData.loc[idx],_model,_K)
@@ -54,7 +56,6 @@ def eval_one_rating_pairwise_mp(idx):
      
      
 def eval_one_rating(row, model, K):
-    
     items = row["Negatives"]#_testNegatives[idx]
     u = row["UserID"]
     gtItem = row["ItemID"]
@@ -74,6 +75,7 @@ def eval_one_rating(row, model, K):
     hr = getHitRatio(ranklist, gtItem)
     ndcg = getNDCG(ranklist, gtItem)
     return (hr, ndcg)
+
 
 def getHitRatio(ranklist, gtItem):
     for item in ranklist:
@@ -104,41 +106,37 @@ def sift_up(model,user,top_k,item):
           return top_k
           
      scores = get_pairwise_score_batch(model,[user]*len(top_k),[item]*len(top_k),top_k)
-     top_k.append(item)
-     i = len(top_k)-1
-          
-     while i>0:
-          #score = get_pairwise_score(model,user,top_k[i],top_k[i-1])
-          score = scores[i-1]
-          if score < 0.5:
-               break
-          else:
-               tmp = top_k[i]
-               top_k[i] = top_k[i-1]
-               top_k[i-1] = tmp
-          i=i-1
+     i = 0
+     while i<len(top_k):
+        score = scores[i]
+        if score < 0.5:
+           i=i+1
+           continue
+        else:
+           top_k.insert(i,item)
+           break
+        i=i+1
      return top_k
      
 def eval_one_rating_pairwise(row, model, K):
+    hr,ndcg,auc = eval_one_rating_pairwise_auc(row,model,K)
+    return (hr, ndcg,auc)
+
+
+def eval_one_rating_pairwise_auc(row, model, K):
     items = row["Negatives"]#_testNegatives[idx]
     u = row["UserID"]
     gtItem = row["ItemID"]
-    items.append(gtItem)
-    shuffle(items)
-  
-    # Get prediction scores
-    top_k = []
-    top_k.append(items[0])
+    predictions = model.predict([np.full(len(items),u,dtype=int), np.full(len(items),gtItem,dtype=int),np.array(items)], 
+                                 batch_size=min(128,len(items)), verbose=0)
+    
+    #predictions = model.predict([np.full(len(items),u,dtype=int), np.array(items), np.full(len(items),gtItem,dtype=int)], 
+     #                            batch_size=min(128,len(items)), verbose=0)
 
-    for i in range(1,len(items)):    
-         top_k = sift_up(model,u,top_k,items[i])
-         if(len(top_k) > K):
-              top_k = top_k[0:K]
-
-    # Evaluate top rank list
-    #print(len(top_k))
-    #print(top_k)
-    #print(gtItem)
-    hr = getHitRatio(top_k, gtItem)
-    ndcg = getNDCG(top_k, gtItem)
-    return (hr, ndcg)
+    rank = len(items) - np.sum(predictions > 0.5)
+    hr = 0
+    ndcg=0
+    if rank < K:
+        hr=1
+        ndcg = math.log(2) / math.log(rank+2)
+    return hr,ndcg,np.sum(predictions > 0.5)/len(items)
