@@ -30,7 +30,7 @@ class Dataset(object):
     classdocs
     '''
 
-    def __init__(self, path, prep_data=False,count_per_user_test=2,count_per_user_validation=0,num_negatives_train=5,num_threads=1):
+    def __init__(self, path, prep_data=False,count_per_user_test=2,count_per_user_validation=0,num_negatives_train=3,num_threads=1):
         '''
         Constructor
         '''
@@ -40,7 +40,7 @@ class Dataset(object):
         if prep_data:
             self.item_list = list(self.item_features.index)
             self.trainData = self.load_file(path+".ratings.data.pkl")
-            #self.trainData = self.trainData.sample(frac=0.01)
+            #self.trainData = self.trainData.sample(frac=0.7)
             self.split_cold_start_items()
             self.split_train_test(count_per_user_test=count_per_user_test,count_per_user_validation=count_per_user_validation)
             self.negative_sampling(num_negatives_train=num_negatives_train)
@@ -53,12 +53,12 @@ class Dataset(object):
             self.testData = self.load_file(path + ".test.data")
             self.testColdStart = self.load_file(path + ".testColdStart.data")
             self.testColdStartPseudo = self.load_file(path + ".testColdStartPseudo.data")
-            ##self.validData = self.load_file(path + ".valid.data")
+           # self.validData = self.load_file(path + ".valid.data")
             #self.validData = self.testData
             #self.test_data = self.loadPickle(path+".test_data")    
             self.train_data = self.loadPickle(path+".train_data")
             
-        self.num_users = 10000#self.trainData["UserID"].max()+1
+        self.num_users = 7000#self.trainData["UserID"].max()+1
         self.num_items = len(self.item_features)
         #self.trainData = self.trainData.sample(1000)
         
@@ -120,7 +120,7 @@ class Dataset(object):
     def negative_sampling(self, num_negatives_train=4):
         user_item_pairs = defaultdict(set)
         
-        for _data in [self.testData, self.testColdStart, self.testColdStartPseudo, self.testData, self.validData]:
+        for _data in [self.testData, self.testColdStart, self.testColdStartPseudo, self.trainData]:
             for x in _data[["UserID", "ItemID"]].values:
                 user_item_pairs[x[0]].add(x[1])
             
@@ -167,8 +167,7 @@ class Dataset(object):
     
         num_negs_per_positive = num_negatives_train
         self.trainData["Negatives"] = self.trainData["UserID"].apply(lambda x: get_negs(x))
-        
-        
+          
 
     def get_item_feature(self,itemid):
       curr_row = self.item_features.iloc[itemid]
@@ -277,10 +276,9 @@ class Dataset(object):
         self.testColdStartPseudo.to_pickle(path+".testColdStartPseudo.data")
         
         self.testData.to_pickle(path+".test.data")
-        self.validData.to_pickle(path+".valid.data")
+        #self.validData.to_pickle(path+".valid.data")
         
         self.pickleit(self.train_data, path+".train_data")
-        #self.pickleit(self.test_data, path+".test_data")
         
     def pickleit(self, o, path):
         

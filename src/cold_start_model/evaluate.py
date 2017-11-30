@@ -28,10 +28,17 @@ def evaluate_model(model, testData, dataset, K, num_thread):
     Return: score of each test rating.
     """
         
+    global _model
+    global _testData
+    global _K
+    _model = model
+    _testData = testData
+    _K = K
+
     hits, ndcgs, aucs = [],[],[]
     if(num_thread > 1): # Multi-thread
         pool = multiprocessing.Pool(processes=num_thread)
-        res = pool.map(eval_one_rating, range(len(_testRatings)))
+        res = pool.map(eval_one_rating_mp, testData.index)
         pool.close()
         pool.join()
         hits = [r[0] for r in res]
@@ -45,6 +52,9 @@ def evaluate_model(model, testData, dataset, K, num_thread):
         ndcgs.append(ndcg)   
         aucs.append(auc)   
     return (hits, ndcgs, aucs)
+
+def eval_one_rating_mp(idx):
+     return eval_one_rating(_testData.loc[idx],_model,_K)
 
 def eval_one_rating(row, model, K, dataset):
     descp = []

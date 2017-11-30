@@ -291,7 +291,7 @@ class MyModel():
         dataset = Dataset(data_path,prep_data=prep_data)
         trainData, testData = dataset.train_data, dataset.testData
         num_users, num_items = dataset.num_users, dataset.num_items
-        
+        return
         # Build model
         #model,inference_model = get_gmf_pairwise_model()
         model,inference_model = get_gmf_pairwise_model(num_users, num_items, num_factors)
@@ -386,6 +386,6 @@ if True:
         mf_pretrain = '',
         mlp_pretrain = '',
         out=0,
-        prep_data=False
+        prep_data=True
     )
 

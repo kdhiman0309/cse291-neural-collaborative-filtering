@@ -59,10 +59,8 @@ def get_model(num_users, num_items, latent_dim, regs=[0,0]):
     # Input variables
     user_input = Input(shape=(1,), dtype='int32', name = 'user_input')
     item_input = Input(shape=(1,), dtype='int32', name = 'item_input')
-    text_input_sparse = Input(shape=(200,), name = 'text_input_sparse')
-    tfidf_dense = Dense(25, activation='relu', kernel_initializer='lecun_uniform',
-                            name = "tfidf_dense_layer2")(text_input_sparse)
-
+    text_input_sparse = Input(shape=(30,), name = 'text_input_sparse')
+    
     item_feature_input_genre = Input(shape=(24,), name = 'item_feature_input_genre')
     item_feature_input_year = Input(shape=(6,), name = 'item_feature_input_year')
     genre_dense = Dense(8, activation='relu', kernel_initializer='lecun_uniform',
@@ -70,21 +68,20 @@ def get_model(num_users, num_items, latent_dim, regs=[0,0]):
     year_dense = Dense(4, activation='relu', kernel_initializer='lecun_uniform',
                             name = "year_dense")(item_feature_input_year)
     
-    complete_item_features = keras.layers.concatenate([tfidf_dense, genre_dense,year_dense])
+    complete_item_features = keras.layers.concatenate([text_input_sparse, genre_dense,year_dense])
 
-
+    dense_1 = Dense(int(latent_dim*2), activation='relu', kernel_initializer='lecun_uniform', name = 'dense_1')(complete_item_features)
+    item_features_latent = Dense(latent_dim, activation='relu', kernel_initializer='lecun_uniform', name = 'dense2')(dense_1)
+    
     MF_Embedding_User = Embedding(input_dim = num_users, output_dim = latent_dim, name = 'user_embedding',
                                   embeddings_initializer = init_normal(), embeddings_regularizer= l2(regs[0]), input_length=1)
     MF_Embedding_Item = Embedding(input_dim = num_items, output_dim = latent_dim, name = 'item_embedding',
                                   embeddings_initializer = init_normal(), embeddings_regularizer= l2(regs[1]), input_length=1)   
     
- 
     # Crucial to flatten an embedding vector!
     user_latent = Flatten()(MF_Embedding_User(user_input))
     item_latent = Flatten()(MF_Embedding_Item(item_input))
     
-    dense_1 = Dense(int(latent_dim*2), activation='relu', kernel_initializer='lecun_uniform', name = 'dense_1')(complete_item_features)
-    item_features_latent = Dense(latent_dim, activation='relu', kernel_initializer='lecun_uniform', name = 'dense2')(dense_1)
     
     multiply_layer0 = keras.layers.multiply([user_latent, item_latent])
     multiply_layer1 = keras.layers.multiply([user_latent, item_features_latent])
