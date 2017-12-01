@@ -170,6 +170,133 @@ def get_model(num_users, num_items, latent_dim, regs=[0,0]):
     print(model.summary())
     return model,inference_model
 
+def get_mlp_base_model(latent_dim,num_layers,layers = [20,10], reg_layers=[0,0]):
+    input1 = Input(shape=(latent_dim,), dtype='int32', name = 'input1')
+    input2 = Input(shape=(latent_dim,), dtype='int32', name = 'input2')
+    vector = keras.layers.concatenate([input1, input2])
+    # MLP layers
+    for idx in range(1, num_layer):
+        layer = Dense(layers[idx], kernel_regularizer= l2(reg_layers[idx]), activation='relu', name = 'layer%d' %idx)
+        vector = layer(vector)
+
+    # Final prediction layer
+    prediction = Dense(1, activation='linear', kernel_initializer='lecun_uniform', name = 'prediction')(vector)
+    model = Model(inputs=[input1, input2], 
+                  outputs=prediction)
+    return model
+    
+
+def get_mlp_model(num_users, num_items, layers = [20,10], reg_layers=[0,0]):
+    assert len(layers) == len(reg_layers)
+    num_layers = len(layers) #Number of layers in the MLP
+
+    # Input variables
+    user_input = Input(shape=(1,), dtype='int32', name = 'user_input')
+    item1_input = Input(shape=(1,), dtype='int32', name = 'item1_input')
+    item2_input = Input(shape=(1,), dtype='int32', name = 'item2_input')
+
+    MLP_Embedding_User = Embedding(input_dim = num_users, output_dim = int(layers[0]/2), name = 'user_embedding',
+                                  embeddings_initializer = init_normal(), embeddings_regularizer = l2(reg_layers[0]), input_length=1)
+    MLP_Embedding_Item = Embedding(input_dim = num_items, output_dim = int(layers[0]/2), name = 'item_embedding',
+                                  embeddings_initializer = init_normal(), embeddings_regularizer = l2(reg_layers[0]), input_length=1)   
+    
+    # Crucial to flatten an embedding vector!
+    user_latent = Flatten()(MLP_Embedding_User(user_input))
+    item1_latent = Flatten()(MLP_Embedding_Item(item1_input))
+    item2_latent = Flatten()(MLP_Embedding_Item(item2_input))
+
+    model =  get_mlp_base_model(latent_dim,num_layers,layers,reg_layers)
+    prediction1 = model([user_latent,item1_latent])
+    prediction2 = model([user_latent,item2_latent])
+    subtract_layer = Lambda(lambda inputs: inputs[0] - inputs[1],
+                        output_shape=lambda shapes: shapes[0])([prediction1,prediction2])
+
+    #prediction = Dense(1, activation='sigmoid', kernel_initializer='lecun_uniform', name = 'prediction')(keras.layers.concatenate([prediction1,prediction2]))
+    prediction = Activation('sigmoid')(subtract_layer)
+    pairwise_model = Model(inputs=[user_input, item1_input, item2_input],outputs=prediction)
+    inference_model = Model(inputs=[user_input, item1_input, item2_input],outputs=prediction1)
+    print(pairwise_model.summary())
+    return pairwise_model,inference_model
+
+def get_neumf_base_model(num_users, num_items, mf_dim, layers = [20,10], reg_layers=[0,0]):
+    num_layers = len(layers)
+    gmf_input1 = Input(shape=(mf_dim,), dtype='int32', name = 'input1')
+    gmf_input2 = Input(shape=(mf_dim,), dtype='int32', name = 'input2')
+
+    mlp_input1 = Input(shape=(int(layers[0]/2),), dtype='int32', name = 'input1')
+    mlp_input2 = Input(shape=(int(layers[0]/2),), dtype='int32', name = 'input2')
+
+    mf_vector = keras.layers.multiply([gmf_input1, gmf_input2])
+    mlp_vector = keras.layers.concatenate([mlp_input1, mlp_input2])
+    
+    for idx in range(1, num_layers):
+        layer = Dense(layers[idx], kernel_regularizer= l2(reg_layers[idx]), activation='relu', name="layer%d" %idx)
+        mlp_vector = layer(mlp_vector)
+
+    predict_vector = keras.layers.concatenate([mf_vector, mlp_vector])
+    
+    # Final prediction layer
+    prediction = Dense(1, activation='linear', kernel_initializer='lecun_uniform', name = "prediction")(predict_vector)
+    
+    model = Model(inputs=[gmf_input1, gmf_input2, mlp_input1, mlp_input2], 
+                  outputs=prediction)
+    return model
+
+    
+    
+def get_neumf_model(num_users, num_items, mf_dim, layers = [20,10], reg_layers=[0,0], mf_reg=0):
+    assert len(layers) == len(reg_layers)
+    num_layers = len(layers) #Number of layers in the MLP
+
+    # Input variables
+    user_input = Input(shape=(1,), dtype='int32', name = 'user_input')
+    item1_input = Input(shape=(1,), dtype='int32', name = 'item1_input')
+    item2_input = Input(shape=(1,), dtype='int32', name = 'item2_input')
+
+    if not shared_embedding:    
+        MF_Embedding_User = Embedding(input_dim = num_users, output_dim = mf_dim, name = 'mf_embedding_user',
+                                      embeddings_initializer = init_normal(), embeddings_regularizer= l2(reg_mf), input_length=1)
+        MF_Embedding_Item = Embedding(input_dim = num_items, output_dim = mf_dim, name = 'mf_embedding_item',
+                                      embeddings_initializer = init_normal(), embeddings_regularizer= l2(reg_mf), input_length=1)   
+        MLP_Embedding_User = Embedding(input_dim = num_users, output_dim = int(layers[0]/2), name = "mlp_embedding_user",
+                                      embeddings_initializer = init_normal(), embeddings_regularizer= l2(reg_layers[0]), input_length=1)
+        MLP_Embedding_Item = Embedding(input_dim = num_items, output_dim = int(layers[0]/2), name = 'mlp_embedding_item',
+                                      embeddings_initializer = init_normal(), embeddings_regularizer= l2(reg_layers[0]), input_length=1)   
+        
+    else:
+        MF_Embedding_User = Embedding(input_dim = num_users, output_dim = max(mf_dim,int(layers[0]/2)), name = 'mf_embedding_user',
+                                      embeddings_initializer = init_normal(), embeddings_regularizer= l2(reg_mf), input_length=1)
+        MF_Embedding_Item = Embedding(input_dim = num_items, output_dim = max(mf_dim,int(layers[0]/2)), name = 'mf_embedding_item',
+                                  embeddings_initializer = init_normal(), embeddings_regularizer= l2(reg_mf), input_length=1)
+
+
+
+    # Crucial to flatten an embedding vector!
+    user_mf_latent = Flatten()(MF_Embedding_User(user_input))
+    item1_mf_latent = Flatten()(MF_Embedding_Item(item1_input))
+    item2_mf_latent = Flatten()(MF_Embedding_Item(item2_input))
+
+    if not shared_embedding:
+        user_mlp_latent = Flatten()(MLP_Embedding_User(user_input))
+        item1_mlp_latent = Flatten()(MLP_Embedding_Item(item1_input))
+        item2_mlp_latent = Flatten()(MLP_Embedding_Item(item2_input))
+    else:
+        user_mlp_latent = user_mf_latent
+        item1_mlp_latent = item1_mf_latent
+        item2_mlp_latent = item2_mf_latent
+
+    neumf_base_model =  get_neumf_base_model(num_users, num_items, mf_dim,layers,reg_layers)
+    prediction1 = neumf_base_model([user_mf_latent,item1_mf_latent,user_mlp_latent,item1_mlp_latent])
+    prediction2 = neumf_base_model([user_mf_latent,item1_mf_latent,user_mlp_latent,item1_mlp_latent])
+    subtract_layer = Lambda(lambda inputs: inputs[0] - inputs[1],
+                        output_shape=lambda shapes: shapes[0])([prediction1,prediction2])
+
+    #prediction = Dense(1, activation='sigmoid', kernel_initializer='lecun_uniform', name = 'prediction')(keras.layers.concatenate([prediction1,prediction2]))
+    prediction = Activation('sigmoid')(subtract_layer)
+    pairwise_model = Model(inputs=[user_input, item1_input, item2_input],outputs=prediction)
+    inference_model = Model(inputs=[user_input, item1_input, item2_input],outputs=prediction1)
+    print(pairwise_model.summary())
+    return pairwise_model,inference_model
 
 def get_model_sep(num_users, num_items, latent_dim, regs=[0,0]):
     # Input variables
@@ -291,7 +418,7 @@ class MyModel():
         dataset = Dataset(data_path,prep_data=prep_data)
         trainData, testData = dataset.train_data, dataset.testData
         num_users, num_items = dataset.num_users, dataset.num_items
-        return
+
         # Build model
         #model,inference_model = get_gmf_pairwise_model()
         model,inference_model = get_gmf_pairwise_model(num_users, num_items, num_factors)
