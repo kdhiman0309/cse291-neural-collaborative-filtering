@@ -75,7 +75,7 @@ def get_model(num_users, num_items, latent_dim, regs=[0,0]):
     # Element-wise product of user and item embeddings 
     predict_vector = keras.layers.multiply([user_latent, item_latent])
     
-    #dense1 = Dense(latent_dim, activation='relu', kernel_initializer='lecun_uniform', name = 'dense1')(predict_vector)
+    #dense1 = Dense(int(latent_dim/2), activation='relu', kernel_initializer='lecun_uniform', name = 'dense1')(predict_vector)
     #dense2 = Dense(int(latent_dim/2), activation='relu', kernel_initializer='lecun_uniform', name = 'dense2')(dense1)
     
     # Final prediction layer
@@ -84,7 +84,7 @@ def get_model(num_users, num_items, latent_dim, regs=[0,0]):
     
     model = Model(inputs=[user_input, item_input], 
                 outputs=prediction)
-
+    print(model.summary())
     return model
 
 
@@ -101,9 +101,10 @@ class MyModel():
         out=0,
         topK = 10,
         datapath = "../data/movielens",
-        prep_data=False
+        prep_data=False,
+        num_threads=1
         ):
-        evaluation_threads = 1 #mp.cpu_count()
+        evaluation_threads = num_threads #mp.cpu_count()
         #print("GMF arguments: %s" %(args))
         model_out_file = '../model/GMF_%d_%d.h5' %(num_factors, time())
         
@@ -202,11 +203,12 @@ if True:
         num_negatives = 5,
         learner = "adam",
         learning_rate = 0.001,
-        epochs = 5,
+        epochs = 10,
         batch_size = 256,
         verbose = 1,
         out=1,
         topK = 10,
         datapath = "../data/movielens20M",
-    		prep_data=True
+        	prep_data=False,
+        num_threads=1
         )

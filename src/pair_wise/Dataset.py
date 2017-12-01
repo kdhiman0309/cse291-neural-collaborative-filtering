@@ -18,6 +18,7 @@ import random
 class ModelData():
     def __init__(self):
         self.userids = None
+        self.itemids = None
         self.item1ids = None
         self.item2ids = None
         self.labels = None
@@ -28,23 +29,48 @@ class Dataset(object):
     classdocs
     '''
 
-    def __init__(self, path, prep_data=False,count_per_user_test=2,count_per_user_validation=0,num_negatives_train=6,num_threads=1):
+    def __init__(self, path, prep_data=False, count_per_user_test=2,count_per_user_validation=0,num_negatives_train=4,num_threads=1):
         '''
         Constructor
         '''
         print("dataset")
         self.num_threads=num_threads
         self.item_features = self.load_file(path + ".itemfeatures.pkl")
+        self.item_list = list(self.item_features.index)
+                
         if prep_data:
-            self.item_list = list(self.item_features.index)
-            self.trainData = self.load_file(path+".ratings.data.pkl")
-            #self.trainData = self.trainData.sample(frac=0.01)
-            self.split_cold_start_items()
-            self.split_train_test(count_per_user_test=count_per_user_test,count_per_user_validation=count_per_user_validation)
-            self.negative_sampling(num_negatives_train=num_negatives_train)
-            self.gen_train_data()
-            #self.gen_test_data()
-            self.save(path)
+            if False:
+                self.trainData = self.load_file(path+".ratings.data.pkl")
+                #self.trainData = self.trainData.sample(frac=0.01)
+                self.split_cold_start_items()
+                self.split_train_test(count_per_user_test=count_per_user_test,count_per_user_validation=count_per_user_validation)
+                self.negative_sampling(num_negatives_train=num_negatives_train)
+                self.gen_train_data()
+                #self.gen_test_data()
+                self.save(path)
+            else:
+                self.train_data = self.loadPickle(path+".train_data")
+                #self.trainData = self.trainData.sample(frac=0.01)
+                self.testData = self.load_file(path + ".test.data")
+                self.testColdStart = self.load_file(path + ".testColdStart.data")
+                self.testColdStartPseudo = self.load_file(path + ".testColdStartPseudo.data")
+                def regenrate_trainData():
+                    pos_ids = [x==1 for x in self.train_data.labels]
+                    
+                    users_ids = self.train_data.userids[pos_ids]
+                    item_ids = self.train_data.itemids[pos_ids]
+                    df = pd.DataFrame()
+                    df["UserID"] = users_ids
+                    df["ItemID"] = item_ids
+                    self.trainData = df
+                    #self.trainData = self.trainData.sample(frac=0.01)
+                    self.negative_sampling_train_only(num_negatives_train=num_negatives_train)
+                    
+                regenrate_trainData()
+                self.gen_train_data()
+                #self.gen_test_data()
+                self.pickleit(self.train_data, path+".train_data_pairwise")
+
         else:
             #self.trainData = self.load_file(path + ".train.data")
             self.testData = self.load_file(path + ".test.data")
@@ -53,7 +79,7 @@ class Dataset(object):
             ##self.validData = self.load_file(path + ".valid.data")
             #self.validData = self.testData
             #self.test_data = self.loadPickle(path+".test_data")    
-            self.train_data = self.loadPickle(path+".train_data")
+            self.train_data = self.loadPickle(path+".train_data_pairwise")
             
         self.num_users = 10000#self.trainData["UserID"].max()+1
         self.num_items = len(self.item_features)
@@ -114,10 +140,48 @@ class Dataset(object):
         self.testData  = df_test_ratings
         self.validData = df_validation_ratings
     
+    def negative_sampling_train_only(self, num_negatives_train=4):
+        user_item_pairs = defaultdict(set)
+        
+        for _data in [self.testData, self.testColdStart, self.testColdStartPseudo]:
+            for x in _data[["UserID", "ItemID", "Negatives"]].values:
+                user_item_pairs[x[0]].add(x[1])
+                for n in x[2]:
+                    user_item_pairs[x[0]].add(n)
+        
+        for _data in [self.trainData]:
+            for x in _data[["UserID", "ItemID"]].values:
+                user_item_pairs[x[0]].add(x[1])
+                
+        
+        num_items = len(self.item_list)
+        user_item_pairs2 = copy.deepcopy(user_item_pairs)
+        
+        def get_negs(u):
+            negs = []
+            for _i in range(num_negs_per_positive):
+                # generate negatives and add to dict
+                j = np.random.randint(num_items)
+                j = self.item_list[j]    
+                while (u,j) in user_item_pairs[u]:
+                     j = np.random.randint(num_items)
+                     j = self.item_list[j]
+                    #print(".")
+                    #assert(j in self.item_list)
+                 
+                negs += [j]
+                #user_item_pairs[u].add(j)
+                user_item_pairs2[u].add(j)
+            return negs
+        
+        num_negs_per_positive = num_negatives_train
+        self.trainData["Negatives"] = self.trainData["UserID"].apply(lambda x: get_negs(x))
+    
+
     def negative_sampling(self, num_negatives_train=4):
         user_item_pairs = defaultdict(set)
         
-        for _data in [self.testData, self.testColdStart, self.testColdStartPseudo, self.testData, self.validData]:
+        for _data in [self.testData, self.testColdStart, self.testColdStartPseudo, self.trainData]:
             for x in _data[["UserID", "ItemID"]].values:
                 user_item_pairs[x[0]].add(x[1])
             
@@ -280,7 +344,7 @@ class Dataset(object):
         self.testColdStartPseudo.to_pickle(path+".testColdStartPseudo.data")
         
         self.testData.to_pickle(path+".test.data")
-        self.validData.to_pickle(path+".valid.data")
+        #self.validData.to_pickle(path+".valid.data")
         
         self.pickleit(self.train_data, path+".train_data")
         #self.pickleit(self.test_data, path+".test_data")
