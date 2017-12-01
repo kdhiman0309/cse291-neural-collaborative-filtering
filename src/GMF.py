@@ -209,6 +209,6 @@ if True:
         out=1,
         topK = 10,
         datapath = "../data/movielens20M",
-        	prep_data=False,
+        	prep_data=True,
         num_threads=1
         )
