@@ -56,7 +56,7 @@ def parse_args():
 def init_normal():
     return initializers.RandomNormal(stddev=0.01)
 
-def get_model(num_users, num_items, layers = [20,10], reg_layers=[0,0]):
+def get_model(num_users, num_items, layers = [20,10], reg_layers=[0,0],item_feature_merge=-1):
     assert len(layers) == len(reg_layers)
     num_layer = len(layers) #Number of layers in the MLP
     # Input variables
@@ -75,6 +75,8 @@ def get_model(num_users, num_items, layers = [20,10], reg_layers=[0,0]):
     latent_dim = int(layers[0]/2)
     dense_1 = Dense(int(latent_dim*2), activation='relu', kernel_initializer='lecun_uniform', name = 'dense_1')(complete_item_features)
     item_features_latent = Dense(latent_dim, activation='relu', kernel_initializer='lecun_uniform', name = 'dense2')(dense_1)
+    complete_item_features = keras.layers.concatenate([tfidf_dense, genre_dense,year_dense])
+
     
     MLP_Embedding_User = Embedding(input_dim = num_users, output_dim = int(layers[0]/2), name = 'user_embedding',
                                   embeddings_initializer = init_normal(), embeddings_regularizer = l2(reg_layers[0]), input_length=1)
@@ -92,20 +94,29 @@ def get_model(num_users, num_items, layers = [20,10], reg_layers=[0,0]):
     # MLP layers
     for idx in range(1, num_layer):
         layer = Dense(layers[idx], kernel_regularizer= l2(reg_layers[idx]), activation='relu', name = 'layer%d' %idx)
-        vector = layer(vector)
+        if idx == item_feature_merge:
+            vector = layer(keras.layers.concatenate([vector,complete_item_features]))
+        else:
+            vector = layer(vector)
         
     # Final prediction layer
+    if item_feature_merge == -1:
+        vector = keras.layers.concatenate([vector,complete_item_features])
+
     prediction = Dense(1, activation='sigmoid', kernel_initializer='lecun_uniform', name = 'prediction')(vector)
     
-    model = Model(inputs=[user_input, item_input], 
+    model = Model(inputs=[user_input, item_input, text_input_sparse, item_feature_input_genre, item_feature_input_year], 
                   outputs=prediction)
     
     return model
 
 class MyModel():
     def train(self,
+
+    def train(self,
         num_factors = 8,
         layers = [32,16,8],
+        item_feature_merge = -1,
         reg_layers = [0,0,0,0],
         num_negatives = 4,
         learner = "adam",
@@ -116,6 +127,7 @@ class MyModel():
         out=0,
         topK = 10,
         datapath = "../data/movielens"
+        prep_data = False
         ):
         
         topK = 10
@@ -167,6 +179,25 @@ class MyModel():
                 self.best_iter = -1
             def on_epoch_end(self, batch, logs={}):
                 
+        class MetricsCallback(keras.callbacks.Callback):
+            def on_train_begin(self, logs={}):
+                self.epoch = 0
+                self.best_hr = 0
+                self.best_ndcg = 0
+                self.best_iter = -1
+            def on_epoch_end(self, batch, logs={}):
+                
+                t2 = time()
+                hr, ndcg, auc = evaulate(dataset.testData)
+                print('Iteration %d [%.1f s]: HR = %.4f, NDCG = %.4f, AUC = %.4f [%.1f s]' 
+                      % (self.epoch,  t2-t1, hr, ndcg, auc, time()-t2))
+                if hr > self.best_hr:
+                    self.best_hr, self.best_ndcg, self.best_iter = hr, ndcg, self.epoch
+                    model.save(model_out_file, overwrite=True)
+                self.epoch+=1
+        
+        t1 = time()
+        metricsClbk = MetricsCallback()
                 t2 = time()
                 hr, ndcg, auc = evaulate(dataset.testData)
                 print('Iteration %d [%.1f s]: HR = %.4f, NDCG = %.4f, AUC = %.4f [%.1f s]' 
@@ -210,8 +241,13 @@ class MyModel():
 if True:
     m = MyModel()
     m.train(
+
+if True:
+    m = MyModel()
+    m.train(
         num_factors = 8,
         layers = [64,32,16,8],
+    item_feature_merge = -1,
         reg_layers = [0,0,0,0],
         num_negatives = 4,
         learner = "adam",
@@ -222,4 +258,5 @@ if True:
         out=0,
         topK = 10,
         datapath = "../data/movielens"
+    prep_data = False
         )
