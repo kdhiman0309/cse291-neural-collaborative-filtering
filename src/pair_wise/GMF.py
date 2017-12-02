@@ -96,12 +96,13 @@ def get_gmf_pairwise_model(num_users,num_items,latent_dim,regs=[0,0]):
     print(pairwise_model.summary())
     return pairwise_model,inference_model 
 
-def get_mlp_base_model(latent_dim,num_layers,layers = [20,10], reg_layers=[0,0]):
-    input1 = Input(shape=(latent_dim,), dtype='int32', name = 'input1')
-    input2 = Input(shape=(latent_dim,), dtype='int32', name = 'input2')
+def get_mlp_base_model(num_layers,layers = [20,10], reg_layers=[0,0]):
+    input1 = Input(shape=(int(layers[0]/2),), dtype='int32', name = 'input1')
+    input2 = Input(shape=(int(layers[0]/2),), dtype='int32', name = 'input2')
     vector = keras.layers.concatenate([input1, input2])
     # MLP layers
-    for idx in range(1, num_layer):
+    for idx in range(1, num_layers):
+        print("add layer")
         layer = Dense(layers[idx], kernel_regularizer= l2(reg_layers[idx]), activation='relu', name = 'layer%d' %idx)
         vector = layer(vector)
 
@@ -131,7 +132,7 @@ def get_mlp_model(num_users, num_items, layers = [20,10], reg_layers=[0,0]):
     item1_latent = Flatten()(MLP_Embedding_Item(item1_input))
     item2_latent = Flatten()(MLP_Embedding_Item(item2_input))
 
-    model =  get_mlp_base_model(latent_dim,num_layers,layers,reg_layers)
+    model =  get_mlp_base_model(num_layers,layers,reg_layers)
     prediction1 = model([user_latent,item1_latent])
     prediction2 = model([user_latent,item2_latent])
     subtract_layer = Lambda(lambda inputs: inputs[0] - inputs[1],
@@ -140,17 +141,19 @@ def get_mlp_model(num_users, num_items, layers = [20,10], reg_layers=[0,0]):
     #prediction = Dense(1, activation='sigmoid', kernel_initializer='lecun_uniform', name = 'prediction')(keras.layers.concatenate([prediction1,prediction2]))
     prediction = Activation('sigmoid')(subtract_layer)
     pairwise_model = Model(inputs=[user_input, item1_input, item2_input],outputs=prediction)
-    inference_model = Model(inputs=[user_input, item1_input, item2_input],outputs=prediction1)
+    prediction_inference = Activation('sigmoid')(prediction1)
+    inference_model = Model(inputs=[user_input, item1_input],
+                            outputs=prediction_inference)
     print(pairwise_model.summary())
     return pairwise_model,inference_model
 
 def get_neumf_base_model(num_users, num_items, mf_dim, layers = [20,10], reg_layers=[0,0]):
     num_layers = len(layers)
-    gmf_input1 = Input(shape=(mf_dim,), dtype='int32', name = 'input1')
-    gmf_input2 = Input(shape=(mf_dim,), dtype='int32', name = 'input2')
+    gmf_input1 = Input(shape=(mf_dim,), dtype='int32', name = 'gmf_input1')
+    gmf_input2 = Input(shape=(mf_dim,), dtype='int32', name = 'gmf_input2')
 
-    mlp_input1 = Input(shape=(int(layers[0]/2),), dtype='int32', name = 'input1')
-    mlp_input2 = Input(shape=(int(layers[0]/2),), dtype='int32', name = 'input2')
+    mlp_input1 = Input(shape=(int(layers[0]/2),), dtype='int32', name = 'mlp_input1')
+    mlp_input2 = Input(shape=(int(layers[0]/2),), dtype='int32', name = 'mlp_input2')
 
     mf_vector = keras.layers.multiply([gmf_input1, gmf_input2])
     mlp_vector = keras.layers.concatenate([mlp_input1, mlp_input2])
@@ -170,7 +173,7 @@ def get_neumf_base_model(num_users, num_items, mf_dim, layers = [20,10], reg_lay
 
     
     
-def get_neumf_model(num_users, num_items, mf_dim, layers = [20,10], reg_layers=[0,0], mf_reg=0):
+def get_neumf_model(num_users, num_items, mf_dim, layers = [20,10], reg_layers=[0,0], reg_mf=0):
     assert len(layers) == len(reg_layers)
     num_layers = len(layers) #Number of layers in the MLP
 
@@ -179,7 +182,7 @@ def get_neumf_model(num_users, num_items, mf_dim, layers = [20,10], reg_layers=[
     item1_input = Input(shape=(1,), dtype='int32', name = 'item1_input')
     item2_input = Input(shape=(1,), dtype='int32', name = 'item2_input')
 
-    if not shared_embedding:    
+    if True:    
         MF_Embedding_User = Embedding(input_dim = num_users, output_dim = mf_dim, name = 'mf_embedding_user',
                                       embeddings_initializer = init_normal(), embeddings_regularizer= l2(reg_mf), input_length=1)
         MF_Embedding_Item = Embedding(input_dim = num_items, output_dim = mf_dim, name = 'mf_embedding_item',
@@ -202,7 +205,7 @@ def get_neumf_model(num_users, num_items, mf_dim, layers = [20,10], reg_layers=[
     item1_mf_latent = Flatten()(MF_Embedding_Item(item1_input))
     item2_mf_latent = Flatten()(MF_Embedding_Item(item2_input))
 
-    if not shared_embedding:
+    if True:
         user_mlp_latent = Flatten()(MLP_Embedding_User(user_input))
         item1_mlp_latent = Flatten()(MLP_Embedding_Item(item1_input))
         item2_mlp_latent = Flatten()(MLP_Embedding_Item(item2_input))
@@ -213,14 +216,16 @@ def get_neumf_model(num_users, num_items, mf_dim, layers = [20,10], reg_layers=[
 
     neumf_base_model =  get_neumf_base_model(num_users, num_items, mf_dim,layers,reg_layers)
     prediction1 = neumf_base_model([user_mf_latent,item1_mf_latent,user_mlp_latent,item1_mlp_latent])
-    prediction2 = neumf_base_model([user_mf_latent,item1_mf_latent,user_mlp_latent,item1_mlp_latent])
+    prediction2 = neumf_base_model([user_mf_latent,item2_mf_latent,user_mlp_latent,item2_mlp_latent])
     subtract_layer = Lambda(lambda inputs: inputs[0] - inputs[1],
                         output_shape=lambda shapes: shapes[0])([prediction1,prediction2])
 
     #prediction = Dense(1, activation='sigmoid', kernel_initializer='lecun_uniform', name = 'prediction')(keras.layers.concatenate([prediction1,prediction2]))
     prediction = Activation('sigmoid')(subtract_layer)
     pairwise_model = Model(inputs=[user_input, item1_input, item2_input],outputs=prediction)
-    inference_model = Model(inputs=[user_input, item1_input, item2_input],outputs=prediction1)
+    prediction_inference = Activation('sigmoid')(prediction1)
+    inference_model = Model(inputs=[user_input, item1_input],
+                            outputs=prediction_inference)
     print(pairwise_model.summary())
     return pairwise_model,inference_model
 def get_model_sep(num_users, num_items, latent_dim, regs=[0,0]):
@@ -300,6 +305,8 @@ class MyModel():
         # Build model
         #model,inference_model = get_gmf_pairwise_model()
         model,model_inference = get_gmf_pairwise_model(num_users, num_items, num_factors)
+        # model,model_inference = get_mlp_model(num_users, num_items, layers, reg_layers)
+        #model,model_inference = get_neumf_model(num_users, num_items, mf_dim, layers, reg_layers, reg_mf)
         #model,inference_model = get_model_sep(num_users, num_items, num_factors)
 
         if learner.lower() == "adagrad": 
@@ -394,14 +401,16 @@ class MyModel():
 if True:
     m = MyModel()
     m.train(
-        num_factors=8,
+        num_factors=32,
         data_path="../../data/movielens20M",
         num_epochs = 10,
         batch_size = 256,
-        mf_dim = 8,
-        layers = [32,16,8],
+        mf_dim = 32,
+        layers = [128,64,32],
+        #layers = [64,32,16],
+        #layers = [32,16,8],
         reg_mf = 0,
-        reg_layers = [0,0,0],
+        reg_layers = [0.000001,0.000001],
         num_negatives = 4,
         learning_rate = 0.001,
         learner = "adam",
