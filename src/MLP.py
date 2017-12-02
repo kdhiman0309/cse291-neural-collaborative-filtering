@@ -186,8 +186,7 @@ class MyModel():
         print('Cold Start Pseudo [%.1f s]: HR = %.4f, NDCG = %.4f, AUC = %.4f, [%.1f s]' 
               % (t2-t1, hr, ndcg, auc, time()-t2))
         
-        if out > 0:
-            print("The best MLP model is saved to %s" %(model_out_file))
+        print("The best MLP model is saved to %s" %(model_out_file))
             
         self.dataset = dataset
         self.best_model = model
@@ -195,10 +194,12 @@ class MyModel():
 if True:
     m = MyModel()
     m.train(
-        num_factors = 8,
+        num_factors = 32,
         #layers = [32,16,8],
+        #layers = [64,32,16],
         layers = [128,64,32],
-        reg_layers = [0,0,0],
+        #reg_layers = [0.000001,0,0],
+        reg_layers = [0.000001,0,0],
         num_negatives = 4,
         learner = "adam",
         learning_rate = 0.001,
