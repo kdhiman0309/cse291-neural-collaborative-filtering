@@ -198,7 +198,7 @@ class MyModel():
 if True:
     m = MyModel()
     m.train(
-        num_factors = 8,
+        num_factors = 32,
         regs = [0,0],
         num_negatives = 5,
         learner = "adam",
@@ -209,6 +209,6 @@ if True:
         out=1,
         topK = 10,
         datapath = "../data/movielens20M",
-        	prep_data=True,
+        	prep_data=False,
         num_threads=1
         )

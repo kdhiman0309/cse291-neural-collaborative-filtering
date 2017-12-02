@@ -86,7 +86,7 @@ def get_model(num_users, num_items, layers = [20,10], reg_layers=[0,0]):
     
     model = Model(inputs=[user_input, item_input], 
                   outputs=prediction)
-    
+    print(model.summary())
     return model
 
 class MyModel():
@@ -196,16 +196,17 @@ if True:
     m = MyModel()
     m.train(
         num_factors = 8,
-        layers = [32,16,8],
+        #layers = [32,16,8],
+        layers = [128,64,32],
         reg_layers = [0,0,0],
         num_negatives = 4,
         learner = "adam",
         learning_rate = 0.001,
-        epochs = 5,
+        epochs = 10,
         batch_size = 256,
         verbose = 1,
         out=0,
         topK = 10,
         datapath = "../data/movielens20M",
-        	prep_data=True
+        	prep_data=False
         )
