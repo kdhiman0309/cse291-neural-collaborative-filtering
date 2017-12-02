@@ -117,7 +117,7 @@ def get_model(num_users, num_items, mf_dim=10, layers=[10], reg_layers=[0], reg_
     
     model = Model(inputs=[user_input, item_input], 
                   outputs=prediction)
-    
+    print(model.summary())
     return model
 
 def load_pretrain_model(model, gmf_model, mlp_model, num_layers):
@@ -149,7 +149,7 @@ def load_pretrain_model(model, gmf_model, mlp_model, num_layers):
 class MyModel():
     def train(self,
         datapath="data",
-        num_epochs = 20,
+        epochs = 20,
         batch_size = 256,
         mf_dim = 8,
         layers = [64,32,16,8],
@@ -168,7 +168,7 @@ class MyModel():
         topK = 10
         evaluation_threads = 1 #mp.cpu_count()
         #print("MLP arguments: %s " %(args))
-        model_out_file = '../model/NeuMF_%d_%d.h5' %(num_factors, time())
+        model_out_file = '../model/NeuMF_%d_%d_%d.h5' %(mf_dim, layers[0], time())
         
         # Loading data
         t1 = time()
@@ -178,7 +178,7 @@ class MyModel():
         
         # Build model
         model = get_model(num_users, num_items, mf_dim, layers, reg_layers, reg_mf)
-        print(model.summary())
+        #print(model.summary())
         if learner.lower() == "adagrad": 
             model.compile(optimizer=Adagrad(lr=learning_rate), loss='binary_crossentropy')
         elif learner.lower() == "rmsprop":
@@ -255,8 +255,7 @@ class MyModel():
         print('Cold Start Pseudo [%.1f s]: HR = %.4f, NDCG = %.4f, AUC = %.4f, [%.1f s]' 
               % (t2-t1, hr, ndcg, auc, time()-t2))
         
-        if out > 0:
-            print("The best NeuMF model is saved to %s" %(model_out_file))
+        print("The best NeuMF model is saved to %s" %(model_out_file))
             
         self.dataset = dataset
         self.best_model = model
@@ -265,12 +264,12 @@ class MyModel():
 if True:
     m = MyModel()
     m.train(
-        num_epochs = 20,
+        epochs = 10,
         batch_size = 256,
-        mf_dim = 8,
+        mf_dim = 16,
         layers = [32,16,8],
-        reg_mf = 0,
-        reg_layers = [0,0,0],
+        reg_mf = 0.000001,
+        reg_layers = [0.000001,0,0],
         num_negatives = 4,
         learning_rate = 0.001,
         learner = "adam",
@@ -278,5 +277,5 @@ if True:
         mf_pretrain = '',
         mlp_pretrain = '',
         datapath="../data/movielens20M",
-        prep_data=True
+        prep_data=False
     )
