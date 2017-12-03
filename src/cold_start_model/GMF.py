@@ -55,14 +55,12 @@ def init_normal():
     return initializers.RandomNormal(stddev=0.01)
 
 
-def get_model(num_users, num_items, latent_dim, regs=[0,0]):
+def get_model(num_users, num_items, latent_dim, gensim_dim, regs=[0,0]):
     # Input variables
     user_input = Input(shape=(1,), dtype='int32', name = 'user_input')
     item_input = Input(shape=(1,), dtype='int32', name = 'item_input')
-    text_input_sparse = Input(shape=(200,), name = 'text_input_sparse')
-    tfidf_dense = Dense(25, activation='relu', kernel_initializer='lecun_uniform',
-                            name = "tfidf_dense_layer2")(text_input_sparse)
-
+    text_input_sparse = Input(shape=(gensim_dim,), name = 'text_input_sparse')
+    
     item_feature_input_genre = Input(shape=(24,), name = 'item_feature_input_genre')
     item_feature_input_year = Input(shape=(6,), name = 'item_feature_input_year')
     genre_dense = Dense(8, activation='relu', kernel_initializer='lecun_uniform',
@@ -70,21 +68,20 @@ def get_model(num_users, num_items, latent_dim, regs=[0,0]):
     year_dense = Dense(4, activation='relu', kernel_initializer='lecun_uniform',
                             name = "year_dense")(item_feature_input_year)
     
-    complete_item_features = keras.layers.concatenate([tfidf_dense, genre_dense,year_dense])
+    complete_item_features = keras.layers.concatenate([text_input_sparse, genre_dense,year_dense])
 
-
+    dense_1 = Dense(int(latent_dim*2), activation='relu', kernel_initializer='lecun_uniform', name = 'dense_1')(complete_item_features)
+    item_features_latent = Dense(latent_dim, activation='relu', kernel_initializer='lecun_uniform', name = 'dense2')(dense_1)
+    
     MF_Embedding_User = Embedding(input_dim = num_users, output_dim = latent_dim, name = 'user_embedding',
                                   embeddings_initializer = init_normal(), embeddings_regularizer= l2(regs[0]), input_length=1)
     MF_Embedding_Item = Embedding(input_dim = num_items, output_dim = latent_dim, name = 'item_embedding',
                                   embeddings_initializer = init_normal(), embeddings_regularizer= l2(regs[1]), input_length=1)   
     
- 
     # Crucial to flatten an embedding vector!
     user_latent = Flatten()(MF_Embedding_User(user_input))
     item_latent = Flatten()(MF_Embedding_Item(item_input))
     
-    dense_1 = Dense(int(latent_dim*2), activation='relu', kernel_initializer='lecun_uniform', name = 'dense_1')(complete_item_features)
-    item_features_latent = Dense(latent_dim, activation='relu', kernel_initializer='lecun_uniform', name = 'dense2')(dense_1)
     
     multiply_layer0 = keras.layers.multiply([user_latent, item_latent])
     multiply_layer1 = keras.layers.multiply([user_latent, item_features_latent])
@@ -110,6 +107,7 @@ def get_model(num_users, num_items, latent_dim, regs=[0,0]):
 
 class MyModel():
     def train(self,
+        gensim_dim = 10,
         num_factors = 8,
         regs = [0,0],
         num_negatives = 4,
@@ -130,11 +128,11 @@ class MyModel():
         # Loading data
         t1 = time()
         
-        dataset = Dataset(datapath, prep_data=prep_data)
+        dataset = Dataset(datapath, prep_data=prep_data,gensim_dim=gensim_dim)
         num_users, num_items = dataset.num_users, dataset.num_items
         
         # Build model
-        model = get_model(num_users, num_items, num_factors, regs)
+        model = get_model(num_users, num_items, num_factors, gensim_dim, regs)
         
         if learner.lower() == "adagrad": 
             model.compile(optimizer=Adagrad(lr=learning_rate), loss='binary_crossentropy')
@@ -189,7 +187,8 @@ class MyModel():
         #hist = model.fit_generator(dataset.generator_train_data(batch_size),steps_per_epoch=1+int((len(dataset.train_data.userids)/batch_size)),
         #                          epochs=epochs, verbose=2, shuffle=True, callbacks=[metricsClbk])
         _t = dataset.train_data
-        hist = model.fit([_t.userids, _t.itemids, _t.descp, _t.genre, _t.year], _t.labels, batch_size=batch_size,
+        _t2 = dataset.train_data_item_feat
+        hist = model.fit([_t.userids, _t.itemids, _t2.descp, _t2.genre, _t2.year], _t.labels, batch_size=batch_size,
                                   epochs=epochs, verbose=2, shuffle=True, callbacks=[metricsClbk])
 		# E
         #Evaluation                
@@ -218,8 +217,10 @@ class MyModel():
 if True:
     m = MyModel()
     m.train(
-        num_factors = 16,
-        regs = [0,0],
+        
+        num_factors = 8,
+        gensim_dim = 10,
+        regs = [0.000001,0.000001],
         num_negatives = 5,
         learner = "adam",
         learning_rate = 0.001,
@@ -229,5 +230,5 @@ if True:
         out=1,
         topK = 10,
         datapath = "../../data/movielens20M",
-    		prep_data=False
+    		prep_data=True
         )
